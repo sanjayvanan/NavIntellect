@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { canEdit, scopeLabel } from './scope'
 import uiReducer, { commandHandled, issueCommand, selectObject } from './uiSlice'
 import { initialPanelState, panelReducer } from './panelState'
-import { TOOLS, isMultiPointTool, minPoints, toolById } from './tools/registry'
+import { ACTIONS, TOOLS, actionById, actionOfTool, isMultiPointTool, minPoints, stepHint, toolById } from './tools/registry'
 import pinsReducer, { createPin, deletePin, movePin } from './pins/pinsSlice'
 import { DEFAULT_PIN_STYLE, GLYPHS, PIN_ICONS, pinSvg } from './pins/pinStyle'
 import { newPinForm, pinBodyFrom, pinFormFrom } from './pins/pinFormModel'
@@ -23,16 +23,27 @@ describe('scope rules', () => {
 })
 
 describe('tool registry', () => {
-  it('has unique ids and a handler type for every tool', () => {
+  it('has unique ids, a handler type for every tool and actions that reference real tools', () => {
     expect(new Set(TOOLS.map((t) => t.id)).size).toBe(TOOLS.length)
     for (const t of TOOLS) {
       expect(['shape', 'measure', 'pin']).toContain(t.type)
-      expect(t.label && t.hint && t.Icon).toBeTruthy()
+      expect(t.label && t.Icon && actionById(t.action)).toBeTruthy()
       if (t.type !== 'pin') expect(t.mode).toBeTruthy()
     }
+    for (const a of ACTIONS) for (const id of a.tools) expect(toolById(id)?.action).toBe(a.id)
+    expect(actionOfTool('rectangle').id).toBe('zone')
     expect(isMultiPointTool(toolById('polygon'))).toBe(true)
     expect(minPoints(toolById('polygon'))).toBe(3)
     expect(minPoints(toolById('ruler'))).toBe(2)
+  })
+
+  it('gives a next-step hint that follows the drawing', () => {
+    const polygon = toolById('polygon')
+    expect(stepHint(polygon, { vertices: 0 })).toMatch(/first corner/)
+    expect(stepHint(polygon, { vertices: 2 })).toMatch(/corner 3/)
+    expect(stepHint(polygon, { vertices: 3 })).toMatch(/finish/)
+    expect(stepHint(toolById('circle'), { vertices: 1 })).toMatch(/radius/)
+    expect(stepHint(toolById('pin'), null)).toMatch(/pin/)
   })
 })
 

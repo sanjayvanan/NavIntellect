@@ -6,7 +6,6 @@ import MapContextMenu from './MapContextMenu'
 import ZoomControl from './ZoomControl'
 import MapAutoResize from './MapAutoResize'
 import MapViewPersistence from './MapViewPersistence'
-import CompactAttribution from './CompactAttribution'
 import 'leaflet/dist/leaflet.css'
 import BottomBar from './BottomBar'
 
@@ -31,13 +30,13 @@ function MapComponent({ children }) {
       maxZoom={18}
       worldCopyJump={true}
       zoomControl={false}
+      attributionControl={false} // credits live in the status bar (MapCredits)
       maxBounds={MAX_BOUNDS}
       maxBoundsViscosity={1.0}
       noWrap={false}    // Allow wrapping around the world
     >
       <MapAutoResize />
       <MapViewPersistence />
-      <CompactAttribution />
       {children}
       
       {/* Ship Layer */}

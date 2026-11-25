@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import MapCredits from './MapCredits';
 import { useMap } from 'react-leaflet';
 import { useSelector } from 'react-redux';
 import { useIsolateFromMap } from '../hooks/useIsolateFromMap';
@@ -61,6 +62,7 @@ function BottomBar() {
         <span className="time-display ist">{currentTime.ist}</span>
       </div>
       <div className="bottom-bar-section bb-coords">
+        <MapCredits />
         <span className="label">Lat</span>
         <span>{mouseCoords.lat}°</span>
         <span className="label">Lon</span>

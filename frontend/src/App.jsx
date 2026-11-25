@@ -14,7 +14,7 @@ import './components/AuthScreen.css'
 function Splash() {
   return (
     <div className="auth-splash" role="status">
-      <div>
+      <div className="auth-splash-content">
         <div className="auth-splash-badge">
           <img src={emblem} alt="" />
         </div>

@@ -15,6 +15,14 @@ export const PolygonIcon = (p) => (
     <circle cx="19" cy="8" r="1.4" fill="currentColor" />
   </Svg>
 )
+export const ZoneIcon = (p) => (
+  <Svg {...p}>
+    <path d="M4 9.5 11 4l9 4.5-2 10.5H7z" strokeDasharray="3 2.4" />
+    <circle cx="11" cy="4" r="1.5" fill="currentColor" />
+    <circle cx="4" cy="9.5" r="1.5" fill="currentColor" />
+    <circle cx="20" cy="8.5" r="1.5" fill="currentColor" />
+  </Svg>
+)
 export const RectIcon = (p) => (
   <Svg {...p}>
     <rect x="4" y="6" width="16" height="12" rx="1" />

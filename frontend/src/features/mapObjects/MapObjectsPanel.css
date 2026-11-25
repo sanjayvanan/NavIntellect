@@ -15,46 +15,6 @@
   --gf-card: #1c2026;
 }
 
-/* ---------- tools ---------- */
-.gf-tools {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-  margin-bottom: 12px;
-}
-
-.gf-tool {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 10px 4px 8px;
-  border: 1px solid var(--panel-border);
-  border-radius: 10px;
-  background: transparent;
-  color: var(--panel-text);
-  font-size: 11.5px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.15s ease;
-}
-
-.gf-tool:hover {
-  border-color: var(--gf-accent);
-  color: var(--gf-accent);
-}
-
-.gf-tool.on {
-  border-color: var(--gf-accent);
-  background: var(--gf-accent-soft);
-  color: var(--gf-accent);
-  box-shadow: inset 0 0 0 1px var(--gf-accent);
-}
-
-.gf-tool:active {
-  transform: scale(0.97);
-}
-
 /* ---------- cards ---------- */
 .gf-live-card,
 .gf-form,
@@ -835,4 +795,386 @@
 
 .leaflet-tooltip.pin-tooltip::before {
   border-top-color: rgba(7, 27, 53, 0.92);
+}
+
+/* ======================================================================
+   Panel layout v2: action tiles, tabs, empty states, tip
+   ====================================================================== */
+.gf-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.gf-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 10px 9px;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  background: var(--gf-card);
+  color: var(--panel-text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.gf-action:hover {
+  border-color: var(--gf-accent);
+  box-shadow: 0 4px 14px -6px rgba(8, 124, 166, 0.45);
+}
+
+.gf-action:active {
+  transform: scale(0.98);
+}
+
+.gf-action.on {
+  border-color: var(--gf-accent);
+  background: var(--gf-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--gf-accent);
+}
+
+.gf-action-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-bottom: 4px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #16c5d8, #087ca6);
+  color: #fff;
+}
+
+.gf-action strong {
+  font-size: 13px;
+}
+
+.gf-action small {
+  color: var(--panel-muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.gf-follow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: var(--gf-accent-soft);
+  color: var(--panel-text);
+  font-size: 12.5px;
+}
+
+.gf-follow span:nth-child(2) {
+  flex: 1;
+}
+
+.gf-tabs-wrap {
+  margin-top: 2px;
+}
+
+.gf-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  padding: 3px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  background: var(--panel-hover);
+}
+
+.gf-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 4px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--panel-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.gf-tabs button.on {
+  background: var(--panel-bg);
+  color: var(--panel-text);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
+}
+
+.gf-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--panel-hover);
+  font-size: 10.5px;
+  line-height: 16px;
+}
+
+.gf-tabs button.on .gf-count {
+  background: var(--gf-accent-soft);
+  color: var(--gf-accent);
+}
+
+.gf-tab-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.gf-tab-tools .gf-search {
+  flex: 1;
+  margin: 0;
+}
+
+.gf-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 12px;
+  border: 1px dashed var(--panel-border);
+  border-radius: 12px;
+  text-align: center;
+}
+
+.gf-empty-state p {
+  margin: 0;
+  color: var(--panel-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.gf-tip {
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--panel-border);
+  color: var(--panel-muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.gf-tip kbd {
+  padding: 0 5px;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 10.5px;
+}
+
+/* ======================================================================
+   On-map guide bar (ToolGuideBar), top centre of the map
+   ====================================================================== */
+.tool-guide {
+  --tg-bg: rgba(255, 255, 255, 0.97);
+  --tg-text: #0f1e33;
+  --tg-muted: #5b6470;
+  --tg-border: #dfe3e8;
+  --tg-soft: #f1f5f9;
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  z-index: 1150;
+  width: min(560px, calc(100% - 28px));
+  transform: translateX(-50%);
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--tg-bg);
+  border: 1px solid var(--tg-border);
+  box-shadow: 0 12px 32px -8px rgba(7, 27, 53, 0.35), 0 0 0 3px rgba(22, 197, 216, 0.18);
+  color: var(--tg-text);
+  font: 13px/1.4 Inter, system-ui, sans-serif;
+  cursor: default;
+  animation: tg-in 0.18s ease-out;
+}
+
+.app.dark .tool-guide {
+  --tg-bg: rgba(30, 34, 41, 0.97);
+  --tg-text: #eef1f5;
+  --tg-muted: #a3acb8;
+  --tg-border: #343a43;
+  --tg-soft: #262b32;
+}
+
+.tg-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tg-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #16c5d8, #087ca6);
+  color: #fff;
+}
+
+.tg-head strong {
+  font-size: 14px;
+}
+
+.tg-shapes {
+  display: inline-flex;
+  margin-left: 6px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--tg-soft);
+}
+
+.tg-shapes button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tg-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tg-shapes button.on {
+  background: var(--tg-bg);
+  color: #079db8;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.15);
+}
+
+.tg-close {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--tg-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tg-close:hover {
+  background: var(--tg-soft);
+  color: var(--tg-text);
+}
+
+.tg-step {
+  margin: 8px 0 0;
+  padding-left: 36px;
+  font-weight: 500;
+}
+
+.tg-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  padding-left: 36px;
+}
+
+.tg-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--tg-soft);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 12.5px;
+}
+
+.tg-chip small {
+  color: var(--tg-muted);
+  font-weight: 500;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.tg-chip.strong {
+  background: rgba(22, 197, 216, 0.14);
+  color: #087ca6;
+}
+
+.app.dark .tg-chip.strong {
+  color: #5fe0ee;
+}
+
+.tg-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.tg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--tg-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--tg-text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tg-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.tg-btn.primary {
+  border-color: transparent;
+  background: linear-gradient(135deg, #16c5d8, #087ca6);
+  color: #fff;
+}
+
+.tg-btn kbd {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(127, 127, 127, 0.15);
+  font-family: inherit;
+  font-size: 10.5px;
+}
+
+@keyframes tg-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+}
+
+@media (max-width: 900px) {
+  .tool-guide {
+    top: 64px; /* below the ship search box */
+  }
+
+  .tg-shapes span {
+    display: none; /* icons only */
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-guide {
+    animation: none;
+  }
 }

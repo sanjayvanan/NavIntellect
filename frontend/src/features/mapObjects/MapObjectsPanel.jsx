@@ -10,11 +10,12 @@ import { densify, formatArea, toGeoJsonPolygon } from '../../utils/geo'
 import { canEdit, isOperator } from './scope'
 import { commandHandled, selectObject } from './uiSlice'
 import { initialPanelState, panelReducer } from './panelState'
-import { TOOLS, toolById } from './tools/registry'
+import { ACTIONS, actionById, actionOfTool, toolById } from './tools/registry'
 import { useMapTools } from './tools/useMapTools'
-import { ActiveToolCard, RulerResultCard } from './tools/DrawingCards'
+import { RulerResultCard } from './tools/DrawingCards'
+import { ToolGuideBar } from './tools/ToolGuideBar'
 import { ConfirmBox, ErrorNote } from './ui/controls'
-import { ObjectSection } from './ui/ObjectList'
+import { ObjectTabs } from './ui/ObjectTabs'
 import { createZone, deleteZone, updateZone } from './geofences/zonesSlice'
 import { ZoneForm } from './geofences/ZoneForm'
 import { newZoneForm, zoneFormFrom } from './geofences/zoneFormModel'
@@ -32,8 +33,9 @@ import './MapObjectsPanel.css'
 const PIN_FOCUS_ZOOM = 12
 
 /**
- * "Graphical objects" panel: tools (draw zones, measure, drop pins), the active card (live
- * readout / save form / details) and the lists of pins and zones.
+ * "Graphical objects" panel: three actions (drop pin, draw zone, measure), the active card
+ * (save form / details) and tabbed lists of pins and zones. While a tool is active, a step-by-step
+ * guide with live measurements is shown on the map itself (ToolGuideBar).
  */
 function MapObjectsPanel({ style, theme, onClose }) {
   const map = useMap()
@@ -48,6 +50,8 @@ function MapObjectsPanel({ style, theme, onClose }) {
   const command = useSelector((s) => s.mapObjectsUi.command)
   const [state, send] = useReducer(panelReducer, initialPanelState)
   const [filter, setFilter] = useState('')
+  const [listTab, setListTab] = useState(null) // null = pick a sensible tab (see below)
+  const lastShape = useRef('polygon') // "Draw zone" reopens the shape used last
   const panelRef = useRef(null)
   const canShare = isOperator(user)
   const { tool, readout, view, confirm, saving, error } = state
@@ -97,7 +101,18 @@ function MapObjectsPanel({ style, theme, onClose }) {
     else tools.current.draw.start(t.mode, { from })
   }
 
-  const toggleTool = (id) => (tool === id ? stopTools() : startTool(id))
+  /** Panel action button: starts its tool, or stops it when it is already running. */
+  const toggleAction = (actionId) => {
+    if (actionOfTool(tool)?.id === actionId) return stopTools()
+    const action = actionById(actionId)
+    startTool(actionId === 'zone' ? lastShape.current : action.tools[0])
+  }
+
+  /** Shape picker in the guide bar (keeps an edit-in-progress open when redrawing). */
+  const switchTool = (id) => {
+    if (toolById(id).action === 'zone') lastShape.current = id
+    startTool(id, { keepView: viewRef.current.kind === 'zoneEdit' })
+  }
 
   // Commands from outside the panel (map context menu).
   useEffect(() => {
@@ -208,12 +223,38 @@ function MapObjectsPanel({ style, theme, onClose }) {
       onZoom: () => zoomToPin(p),
       onEdit: () => send({ type: 'show', view: { kind: 'pinEdit', pinId: p.id } }),
     })
-  const sectionRows = {
+  const lists = {
     pins: pins.filter(matches).map(pinRow),
     mine: zones.filter((z) => z.properties.scope === 'personal' && matches(z)).map(zoneRow),
     shared: zones.filter((z) => z.properties.scope === 'shared' && matches(z)).map(zoneRow),
   }
+  const totals = {
+    pins: pins.length,
+    mine: zones.filter((z) => z.properties.scope === 'personal').length,
+    shared: zones.filter((z) => z.properties.scope === 'shared').length,
+  }
   const setAll = (type, rows) => (hide) => dispatch(setHidden({ type, ids: rows.map((r) => r.key), hidden: hide }))
+  const tabs = [
+    {
+      id: 'pins',
+      label: 'Pins',
+      total: totals.pins,
+      rows: lists.pins,
+      onSetAllHidden: setAll('pin', lists.pins),
+      empty: { text: 'No pins yet. Drop one to mark a buoy, a wreck, a meeting point…', actionLabel: 'Drop a pin', onAction: () => toggleAction('pin') },
+    },
+    {
+      id: 'mine',
+      label: 'My zones',
+      total: totals.mine,
+      rows: lists.mine,
+      onSetAllHidden: setAll('zone', lists.mine),
+      empty: { text: 'Draw an area to watch: get its size, the ships inside and alerts.', actionLabel: 'Draw a zone', onAction: () => toggleAction('zone') },
+    },
+    { id: 'shared', label: 'Shared', total: totals.shared, rows: lists.shared, onSetAllHidden: setAll('zone', lists.shared), empty: { text: 'No shared zones.' } },
+  ]
+  // Until the user picks a tab: their pins if they have any, else their zones, else the shared ones.
+  const activeTab = listTab ?? (totals.pins ? 'pins' : totals.mine ? 'mine' : 'shared')
 
   // ---------- active card ----------
   const editingZone = view.kind === 'zoneEdit' ? zones.find((z) => z.id === view.zoneId) : null
@@ -227,16 +268,14 @@ function MapObjectsPanel({ style, theme, onClose }) {
 
   let card = null
   if (activeTool) {
-    const title = view.kind === 'zoneEdit' ? 'Redrawing shape' : activeTool.type === 'pin' ? 'Dropping a pin' : `Drawing ${activeTool.label.toLowerCase()}`
     card = (
-      <ActiveToolCard
-        tool={activeTool}
-        title={title}
-        readout={readout}
-        onUndo={() => tools.current.draw.undo()}
-        onCancel={stopTools}
-        onFinish={() => tools.current.draw.finish()}
-      />
+      <div className="gf-follow" role="status">
+        <span className="gf-pulse" />
+        <span>Follow the steps at the top of the map.</span>
+        <button type="button" className="gf-link" onClick={stopTools}>
+          Cancel
+        </button>
+      </div>
     )
   } else if (view.kind === 'ruler') {
     card = <RulerResultCard readout={view.readout} onClear={discard} onAgain={() => startTool('ruler')} />
@@ -316,13 +355,19 @@ function MapObjectsPanel({ style, theme, onClose }) {
         </button>
       </div>
 
-      <div className="gf-tools" role="toolbar" aria-label="Tools" style={{ gridTemplateColumns: `repeat(${TOOLS.length}, 1fr)` }}>
-        {TOOLS.map(({ id, label, Icon }) => (
-          <button key={id} type="button" className={`gf-tool ${tool === id ? 'on' : ''}`} onClick={() => toggleTool(id)} aria-pressed={tool === id}>
-            <Icon />
-            <span>{label}</span>
-          </button>
-        ))}
+      <div className="gf-actions-grid" role="toolbar" aria-label="Create">
+        {ACTIONS.map(({ id, label, caption, Icon }) => {
+          const on = actionOfTool(tool)?.id === id
+          return (
+            <button key={id} type="button" className={`gf-action ${on ? 'on' : ''}`} onClick={() => toggleAction(id)} aria-pressed={on}>
+              <span className="gf-action-icon">
+                <Icon size={20} />
+              </span>
+              <strong>{label}</strong>
+              <small>{caption}</small>
+            </button>
+          )
+        })}
       </div>
 
       {card}
@@ -349,11 +394,24 @@ function MapObjectsPanel({ style, theme, onClose }) {
         />
       )}
 
-      <input className="gf-search" placeholder="Filter pins and zones" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter pins and zones" />
-      {zonesStatus === 'loading' && !zones.length && <p className="gf-empty">Loading…</p>}
-      <ObjectSection title="Pins" rows={sectionRows.pins} empty="Use the Pin tool or right-click the map to drop a pin." onSetAllHidden={setAll('pin', sectionRows.pins)} />
-      <ObjectSection title="My zones" rows={sectionRows.mine} empty="Draw a shape above to create your own zone." onSetAllHidden={setAll('zone', sectionRows.mine)} />
-      <ObjectSection title="Shared geofences" rows={sectionRows.shared} empty="No shared zones." onSetAllHidden={setAll('zone', sectionRows.shared)} />
+      {zonesStatus === 'loading' && !zones.length ? (
+        <p className="gf-empty">Loading…</p>
+      ) : (
+        <ObjectTabs tabs={tabs} active={activeTab} onChange={setListTab} filter={filter} onFilter={setFilter} />
+      )}
+      <p className="gf-tip">
+        <kbd>Right-click</kbd> the map for quick actions: drop a pin, measure from a point, copy coordinates.
+      </p>
+
+      <ToolGuideBar
+        container={map.getContainer()}
+        toolId={tool}
+        readout={readout}
+        onSwitchTool={switchTool}
+        onUndo={() => tools.current.draw.undo()}
+        onFinish={() => tools.current.draw.finish()}
+        onCancel={stopTools}
+      />
     </div>
   )
 }
