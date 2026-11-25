@@ -4,6 +4,7 @@ import { audit } from '../../db/audit.js';
 import { pool, withTransaction } from '../../db/pool.js';
 import { readAccess, requireRole } from '../auth/guard.js';
 import { notFound, parse, uuidParam } from '../errors.js';
+import { viewerId, visibleSql } from '../auth/scope.js';
 
 const ALERT_COLUMNS = `
   a.id, a.type, a.severity, a.mmsi, a.zone_id, z.name AS zone_name, v.name AS vessel_name,
@@ -28,8 +29,9 @@ const listQuery = z.object({
 export async function alertRoutes(app: FastifyInstance) {
   app.get('/api/alerts', { preHandler: readAccess }, async (req) => {
     const q = parse(listQuery, req.query);
-    const where: string[] = [];
-    const params: unknown[] = [];
+    // Alerts of other users' personal zones are invisible (alerts without a zone are always visible).
+    const params: unknown[] = [viewerId(req)];
+    const where: string[] = [`(z.id IS NULL OR ${visibleSql('z', 1)})`];
     const add = (sql: string, v: unknown) => {
       params.push(v);
       where.push(sql.replace('?', `$${params.length}`));
@@ -52,10 +54,13 @@ export async function alertRoutes(app: FastifyInstance) {
     return rows;
   });
 
-  app.get('/api/alerts/summary', { preHandler: readAccess }, async () => {
+  app.get('/api/alerts/summary', { preHandler: readAccess }, async (req) => {
     const { rows } = await pool.query(
-      `SELECT type, severity, count(*)::int AS open
-       FROM alerts WHERE acknowledged_at IS NULL GROUP BY type, severity ORDER BY type, severity`,
+      `SELECT a.type, a.severity, count(*)::int AS open
+       FROM alerts a LEFT JOIN zones z ON z.id = a.zone_id
+       WHERE a.acknowledged_at IS NULL AND (z.id IS NULL OR ${visibleSql('z', 1)})
+       GROUP BY a.type, a.severity ORDER BY a.type, a.severity`,
+      [viewerId(req)],
     );
     return rows;
   });

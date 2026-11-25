@@ -12,6 +12,7 @@ import { errorHandler } from './errors.js';
 import { alertRoutes } from './routes/alerts.js';
 import { authRoutes } from './routes/auth.js';
 import { preferenceRoutes } from './routes/preferences.js';
+import { annotationRoutes } from './routes/annotations.js';
 import { healthRoutes } from './routes/health.js';
 import { shipRoutes } from './routes/ships.js';
 import { userRoutes } from './routes/users.js';
@@ -52,6 +53,7 @@ export async function buildServer(deps: { redis: Redis; subscriber: Redis }) {
   await app.register(authRoutes);
   await app.register(userRoutes);
   await app.register(preferenceRoutes);
+  await app.register(annotationRoutes);
   await app.register(wsRoutes, { subscriber: deps.subscriber });
 
   return app;

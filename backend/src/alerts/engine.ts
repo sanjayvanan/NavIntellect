@@ -12,6 +12,8 @@ export interface AlertRow {
   mmsi: number;
   zone_id: string | null;
   zone_name: string | null;
+  /** Owner of a personal zone (null = shared). Personal-zone alerts are not broadcast over WebSocket. */
+  zone_owner_id: string | null;
   vessel_name: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -169,7 +171,7 @@ async function insertAlerts(
        )
        RETURNING *
      )
-     SELECT ins.id, ins.type, ins.severity, ins.mmsi, ins.zone_id, z.name AS zone_name, v.name AS vessel_name,
+     SELECT ins.id, ins.type, ins.severity, ins.mmsi, ins.zone_id, z.name AS zone_name, z.owner_id AS zone_owner_id, v.name AS vessel_name,
             ST_Y(ins.geom::geometry)::float8 AS latitude, ST_X(ins.geom::geometry)::float8 AS longitude,
             ins.details, ins.created_at
      FROM ins LEFT JOIN zones z ON z.id = ins.zone_id LEFT JOIN vessels v ON v.mmsi = ins.mmsi`,

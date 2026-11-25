@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types -- internal component; the project does not use PropTypes */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useSelector, useDispatch } from 'react-redux'
 import { setBaseLayer, toggleClustering, toggleOverlay, toggleSidebar } from '../store/themeSlice'
@@ -22,6 +22,7 @@ import L from 'leaflet'
 import { baseLayers, overlayLayers } from '../config/mapLayers'
 import SettingsPanel from './SettingsPanel'
 import AccountPanel from './AccountPanel'
+import { MapObjectsPanel } from '../features/mapObjects'
 import BrandMark from './BrandMark'
 import './Sidebar.css'
 
@@ -49,6 +50,9 @@ function Sidebar({ rail, fullscreen }) {
   const [showLayerControl, setShowLayerControl] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
+  const [showObjects, setShowObjects] = useState(false)
+  const selection = useSelector((state) => state.mapObjectsUi.selection)
+  const objectCommand = useSelector((state) => state.mapObjectsUi.command)
   const [buttonPosition, setButtonPosition] = useState({ top: 0 })
   const map = useMap()
 
@@ -72,6 +76,24 @@ function Sidebar({ rail, fullscreen }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by overlayKey
   }, [map, overlayKey])
 
+  // Selecting a zone/pin on the map, or a map context-menu command (drop pin, measure from here),
+  // opens the objects panel, which then shows the details / carries out the command. The panel
+  // lives in the rail, so a collapsed sidebar is expanded first (otherwise it would open hidden).
+  const collapsed = useSelector((state) => state.theme.sidebarCollapsed)
+  const collapsedRef = useRef(collapsed)
+  collapsedRef.current = collapsed
+  useEffect(() => {
+    if (!selection && !objectCommand) return
+    if (collapsedRef.current) dispatch(toggleSidebar())
+    setShowObjects((open) => {
+      if (!open) setButtonPosition({ top: 12 })
+      return true
+    })
+    setShowLayerControl(false)
+    setShowSettings(false)
+    setShowAccount(false)
+  }, [selection, objectCommand, dispatch])
+
   const handleSidebarClick = (buttonId, event) => {
     const rect = event.currentTarget.getBoundingClientRect()
     // Align the panel with its button, but keep at least ~320px of it on screen.
@@ -81,10 +103,17 @@ function Sidebar({ rail, fullscreen }) {
       setButtonPosition({ top })
       setShowLayerControl(!showLayerControl)
       setShowSettings(false)
+      setShowObjects(false)
     } else if (buttonId === 'settings') {
       setButtonPosition({ top })
       setShowSettings(!showSettings)
       setShowLayerControl(false)
+      setShowObjects(false)
+    } else if (buttonId === 'objects') {
+      setButtonPosition({ top: 12 }) // tall panel: use the full height
+      setShowObjects(!showObjects)
+      setShowLayerControl(false)
+      setShowSettings(false)
     }
   }
 
@@ -96,9 +125,11 @@ function Sidebar({ rail, fullscreen }) {
     setShowLayerControl(false)
     setShowSettings(false)
     setShowAccount(false)
+    setShowObjects(false)
   }
   const panelStyle = { top: buttonPosition.top, maxHeight: `calc(100vh - ${buttonPosition.top + 12}px)` }
-  const isActive = (id) => (id === 'mapType' && showLayerControl) || (id === 'settings' && showSettings)
+  const isActive = (id) =>
+    (id === 'mapType' && showLayerControl) || (id === 'settings' && showSettings) || (id === 'objects' && showObjects)
 
   return createPortal(
     <>
@@ -162,6 +193,7 @@ function Sidebar({ rail, fullscreen }) {
             onClick={() => {
               setShowLayerControl(false)
               setShowSettings(false)
+              setShowObjects(false)
               setShowAccount(!showAccount)
             }}
             data-label={displayName(user)}
@@ -176,6 +208,8 @@ function Sidebar({ rail, fullscreen }) {
       {showAccount && <AccountPanel user={user} theme={theme} onClose={closePanels} />}
 
       {showSettings && <SettingsPanel style={panelStyle} onClose={closePanels} />}
+
+      {showObjects && <MapObjectsPanel style={panelStyle} theme={theme} onClose={closePanels} />}
 
       {showLayerControl && (
         <div className={`layer-control-panel ${theme}`} style={panelStyle}>

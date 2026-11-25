@@ -232,8 +232,12 @@ describe('auth', () => {
     expect(created.statusCode).toBe(201);
     const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'viewer@test.local', password: 'viewer-password-1' } });
     const viewerToken = login.json().access_token;
-    const res = await app.inject({ method: 'POST', url: '/api/zones', headers: { authorization: `Bearer ${viewerToken}` }, payload: {} });
-    expect(res.statusCode).toBe(403);
+    const geometry = { type: 'Polygon', coordinates: [[[10, 10], [10.1, 10], [10.1, 10.1], [10, 10]]] };
+    const shared = await app.inject({ method: 'POST', url: '/api/zones', headers: { authorization: `Bearer ${viewerToken}` }, payload: { name: 's', geometry, scope: 'shared' } });
+    expect(shared.statusCode).toBe(403);
+    const mine = await app.inject({ method: 'POST', url: '/api/zones', headers: { authorization: `Bearer ${viewerToken}` }, payload: { name: 'mine', geometry } });
+    expect(mine.statusCode).toBe(201);
+    expect(mine.json().properties).toMatchObject({ scope: 'personal', active: false });
   });
 });
 
@@ -269,7 +273,14 @@ describe('registration and preferences', () => {
 
     const bad = await app.inject({ method: 'PUT', url: '/api/me/preferences', headers: auth, payload: { settings: { view: { lat: 200, lng: 0, zoom: 3 } } } });
     expect(bad.statusCode).toBe(400);
-    const huge = await app.inject({ method: 'PUT', url: '/api/me/preferences', headers: auth, payload: { settings: { blob: 'x'.repeat(20_000) } } });
+    // Hiding many map objects must still fit (1,000 ids per type is the client-side cap).
+    const ids = (n: number) => Array.from({ length: n }, () => crypto.randomUUID());
+    const manyHidden = await app.inject({
+      method: 'PUT', url: '/api/me/preferences', headers: auth,
+      payload: { settings: { mode: 'dark', hidden: { zone: ids(1000), pin: ids(1000) } } },
+    });
+    expect(manyHidden.statusCode).toBe(200);
+    const huge = await app.inject({ method: 'PUT', url: '/api/me/preferences', headers: auth, payload: { settings: { blob: 'x'.repeat(200_000) } } });
     expect(huge.statusCode).toBe(413);
 
     expect((await app.inject({ method: 'DELETE', url: '/api/me/preferences', headers: auth })).statusCode).toBe(204);
@@ -285,7 +296,7 @@ describe('geofences and alerts', () => {
   it('creates a zone from GeoJSON', async () => {
     const res = await app.inject({
       method: 'POST', url: '/api/zones', headers: { authorization: `Bearer ${adminToken}` },
-      payload: { name: 'Mumbai Restricted', kind: 'restricted', geometry: square, rules: { max_speed: 8 } },
+      payload: { name: 'Mumbai Restricted', kind: 'restricted', geometry: square, rules: { max_speed: 8 }, scope: 'shared', active: true },
     });
     expect(res.statusCode).toBe(201);
     const f = res.json();
@@ -313,7 +324,9 @@ describe('geofences and alerts', () => {
     expect(alerts.find((a) => a.type === 'zone_enter')).toMatchObject({ severity: 'critical', zone_name: 'Mumbai Restricted' });
 
     const inside = (await app.inject({ url: `/api/zones/${zoneId}/vessels` })).json();
-    expect(inside.map((v: { mmsi: number }) => v.mmsi)).toEqual([419200001]);
+    // Live from latest positions, so other test vessels parked in the box count too.
+    expect(inside.vessels.map((v: { mmsi: number }) => v.mmsi)).toContain(419200001);
+    expect(inside.total).toBe(inside.vessels.length);
 
     await ingest(positionReport({ mmsi: 419200001, lat: 19.5, lon: 72.85, sog: 12, time: minsAgo(1) })); // outside again
     alerts = (await app.inject({ url: `/api/alerts?mmsi=419200001&type=zone_exit` })).json();
@@ -337,7 +350,7 @@ describe('geofences and alerts', () => {
     const box = { type: 'Polygon', coordinates: [[[80.2, 13.0], [80.4, 13.0], [80.4, 13.2], [80.2, 13.2], [80.2, 13.0]]] };
     const res = await app.inject({
       method: 'POST', url: '/api/zones', headers: { authorization: `Bearer ${adminToken}` },
-      payload: { name: 'Chennai Anchorage', kind: 'anchorage', geometry: box, rules: { loiter_minutes: 20, alert_on_enter: false } },
+      payload: { name: 'Chennai Anchorage', kind: 'anchorage', geometry: box, rules: { loiter_minutes: 20, alert_on_enter: false }, scope: 'shared', active: true },
     });
     expect(res.statusCode).toBe(201);
     await ingest(positionReport({ mmsi: 419200003, lat: 13.1, lon: 80.3, sog: 0.2, time: minsAgo(30) }));
@@ -354,6 +367,136 @@ describe('geofences and alerts', () => {
     await pipeline.sweepGaps(30);
     const alerts = (await app.inject({ url: '/api/alerts?mmsi=419200002&type=ais_gap' })).json();
     expect(alerts).toHaveLength(1);
+  });
+});
+
+describe('personal zones and presets', () => {
+  const geometry = { type: 'Polygon', coordinates: [[[60.0, 15.0], [60.3, 15.0], [60.3, 15.3], [60.0, 15.3], [60.0, 15.0]]] };
+  const signup = async (email: string) =>
+    (await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email, password: 'personal-zone-pass' } })).json().access_token as string;
+
+  it('ships the well-known presets as shared zones with monitoring off', async () => {
+    const all = (await app.inject({ url: '/api/zones?scope=shared' })).json().features as { properties: Record<string, unknown> }[];
+    const presets = all.filter((f) => f.properties.preset);
+    expect(presets.length).toBeGreaterThanOrEqual(10);
+    expect(presets.map((f) => f.properties.name)).toContain('Strait of Hormuz');
+    expect(presets.every((f) => f.properties.active === false && f.properties.scope === 'shared')).toBe(true);
+    expect(Number(presets[0]!.properties.area_nm2)).toBeGreaterThan(0);
+  });
+
+  it('keeps a personal zone, its vessels and its alerts private to the owner', async () => {
+    const alice = { authorization: `Bearer ${await signup('alice@test.local')}` };
+    const bob = { authorization: `Bearer ${await signup('bob@test.local')}` };
+    const created = await app.inject({
+      method: 'POST', url: '/api/zones', headers: alice,
+      payload: { name: 'Alice Box', geometry, color: '#ff8800', active: true, rules: { alert_on_exit: false } },
+    });
+    expect(created.statusCode).toBe(201);
+    const id = created.json().id as string;
+    expect(created.json().properties).toMatchObject({ scope: 'personal', color: '#ff8800', active: true });
+
+    const names = async (h?: Record<string, string>) =>
+      ((await app.inject({ url: '/api/zones', headers: h })).json().features as { properties: { name: string } }[]).map((f) => f.properties.name);
+    expect(await names(alice)).toContain('Alice Box');
+    expect(await names(bob)).not.toContain('Alice Box');
+    expect(await names()).not.toContain('Alice Box');
+
+    for (const h of [bob, undefined]) {
+      expect((await app.inject({ url: `/api/zones/${id}`, headers: h })).statusCode).toBe(404);
+      expect((await app.inject({ url: `/api/zones/${id}/vessels`, headers: h })).statusCode).toBe(404);
+    }
+    expect((await app.inject({ method: 'PATCH', url: `/api/zones/${id}`, headers: bob, payload: { name: 'x' } })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'DELETE', url: `/api/zones/${id}`, headers: bob })).statusCode).toBe(404);
+
+    // A vessel entering Alice's zone raises an alert only Alice can see.
+    await ingest(positionReport({ mmsi: 419400001, lat: 15.1, lon: 60.1, sog: 9, time: minsAgo(1) }));
+    const alertsFor = async (h?: Record<string, string>) => (await app.inject({ url: '/api/alerts?mmsi=419400001', headers: h })).json() as unknown[];
+    expect(await alertsFor(alice)).toHaveLength(1);
+    expect(await alertsFor(bob)).toHaveLength(0);
+    expect(await alertsFor()).toHaveLength(0);
+    const zonesOf = async (h?: Record<string, string>) => (await app.inject({ url: '/api/vessels/419400001', headers: h })).json().zones as unknown[];
+    expect(await zonesOf(alice)).toHaveLength(1);
+    expect(await zonesOf(bob)).toHaveLength(0);
+    expect((await app.inject({ url: `/api/zones/${id}/vessels`, headers: alice })).json().total).toBe(1);
+
+    // Owner can edit and delete; a viewer cannot edit shared presets.
+    const patched = await app.inject({ method: 'PATCH', url: `/api/zones/${id}`, headers: alice, payload: { name: 'Alice Renamed', active: false } });
+    expect(patched.json().properties).toMatchObject({ name: 'Alice Renamed', active: false });
+    const preset = ((await app.inject({ url: '/api/zones?scope=shared' })).json().features as { id: string }[])[0]!;
+    expect((await app.inject({ method: 'PATCH', url: `/api/zones/${preset.id}`, headers: alice, payload: { active: true } })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'DELETE', url: `/api/zones/${id}`, headers: alice })).statusCode).toBe(204);
+  });
+});
+
+describe('annotations (pins)', () => {
+  const pin = (lng: number, lat: number, extra: Record<string, unknown> = {}) => ({
+    kind: 'pin', name: 'Buoy', geometry: { type: 'Point', coordinates: [lng, lat] }, style: { color: '#ff0000', icon: 'anchor' }, ...extra,
+  });
+  const signup = async (email: string) => ({
+    authorization: `Bearer ${(await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email, password: 'pin-test-password' } })).json().access_token}`,
+  });
+
+  it('creates, lists, moves, edits and deletes a personal pin', async () => {
+    const carol = await signup('carol@test.local');
+    const created = await app.inject({ method: 'POST', url: '/api/annotations', headers: carol, payload: pin(72.8, 18.9, { description: 'Harbour entrance' }) });
+    expect(created.statusCode).toBe(201);
+    const f = created.json();
+    expect(f.geometry).toEqual({ type: 'Point', coordinates: [72.8, 18.9] });
+    expect(f.properties).toMatchObject({ kind: 'pin', name: 'Buoy', scope: 'personal', style: { color: '#ff0000', icon: 'anchor' } });
+
+    const list = (await app.inject({ url: '/api/annotations?kind=pin', headers: carol })).json().features;
+    expect(list.map((x: { id: string }) => x.id)).toContain(f.id);
+    expect((await app.inject({ url: '/api/annotations?bbox=72,18,73,19', headers: carol })).json().features).toHaveLength(1);
+    expect((await app.inject({ url: '/api/annotations?bbox=10,10,11,11', headers: carol })).json().features).toHaveLength(0);
+    // bbox crossing the antimeridian (minLon > maxLon) still finds pins on the near side
+    expect((await app.inject({ url: '/api/annotations?bbox=170,18,73,19', headers: carol })).json().features).toHaveLength(1);
+
+    const moved = await app.inject({
+      method: 'PATCH', url: `/api/annotations/${f.id}`, headers: carol,
+      payload: { geometry: { type: 'Point', coordinates: [72.85, 18.95] }, name: 'Fairway buoy', style: { color: '#00ff00', icon: 'flag' } },
+    });
+    expect(moved.statusCode).toBe(200);
+    expect(moved.json()).toMatchObject({
+      geometry: { coordinates: [72.85, 18.95] },
+      properties: { name: 'Fairway buoy', description: 'Harbour entrance', style: { icon: 'flag' } },
+    });
+
+    expect((await app.inject({ method: 'DELETE', url: `/api/annotations/${f.id}`, headers: carol })).statusCode).toBe(204);
+    expect((await app.inject({ url: `/api/annotations/${f.id}`, headers: carol })).statusCode).toBe(404);
+  });
+
+  it('keeps personal pins private and shared pins operator-only', async () => {
+    const dave = await signup('dave@test.local');
+    const erin = await signup('erin@test.local');
+    const id = (await app.inject({ method: 'POST', url: '/api/annotations', headers: dave, payload: pin(1, 2) })).json().id;
+    for (const h of [erin, undefined]) {
+      expect((await app.inject({ url: `/api/annotations/${id}`, headers: h })).statusCode).toBe(404);
+      expect((await app.inject({ url: '/api/annotations', headers: h })).json().features.map((x: { id: string }) => x.id)).not.toContain(id);
+    }
+    expect((await app.inject({ method: 'PATCH', url: `/api/annotations/${id}`, headers: erin, payload: { name: 'x' } })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'DELETE', url: `/api/annotations/${id}`, headers: erin })).statusCode).toBe(404);
+
+    expect((await app.inject({ method: 'POST', url: '/api/annotations', headers: dave, payload: pin(1, 2, { scope: 'shared' }) })).statusCode).toBe(403);
+    const admin = { authorization: `Bearer ${adminToken}` };
+    const shared = await app.inject({ method: 'POST', url: '/api/annotations', headers: admin, payload: pin(3, 4, { scope: 'shared' }) });
+    expect(shared.statusCode).toBe(201);
+    expect((await app.inject({ url: `/api/annotations/${shared.json().id}` })).statusCode).toBe(200); // anyone can see it
+    expect((await app.inject({ method: 'PATCH', url: `/api/annotations/${shared.json().id}`, headers: dave, payload: { name: 'x' } })).statusCode).toBe(403);
+  });
+
+  it('validates geometry and style per kind', async () => {
+    const frank = await signup('frank@test.local');
+    const status = async (payload: Record<string, unknown>) => (await app.inject({ method: 'POST', url: '/api/annotations', headers: frank, payload })).statusCode;
+    expect(await status(pin(200, 10))).toBe(400); // longitude out of range
+    expect(await status({ ...pin(1, 1), geometry: { type: 'LineString', coordinates: [[0, 0], [1, 1]] } })).toBe(400); // pins are points
+    expect(await status({ ...pin(1, 1), style: { icon: 'unicorn' } })).toBe(400);
+    expect(await status({ ...pin(1, 1), kind: 'route' })).toBe(400); // unknown kind
+    expect(await status({ ...pin(1, 1), name: '' })).toBe(400);
+    const defaults = await app.inject({
+      method: 'POST', url: '/api/annotations', headers: frank,
+      payload: { kind: 'pin', name: 'Plain', geometry: { type: 'Point', coordinates: [5, 5] } },
+    });
+    expect(defaults.json().properties.style).toEqual({ color: '#16c5d8', icon: 'pin' });
   });
 });
 

@@ -100,18 +100,23 @@ The web app requires signing in, but the map's read endpoints stay open while `A
 | GET | `/api/vessels/:mmsi` | Static data, latest position, zones the vessel is currently in |
 | GET | `/api/vessels/:mmsi/track?from=&to=&tolerance=` | GeoJSON LineString with timestamps, combining packed history and the raw tail |
 | GET | `/api/tracks/area?bbox=&from=&to=&limit=` | Vessels that were inside an area during a time window |
-| GET/POST/PATCH/DELETE | `/api/zones[/:id]` | GeoJSON Polygon or MultiPolygon in, Feature or FeatureCollection out. Writes need operator |
-| GET | `/api/zones/:id/vessels` | Vessels currently inside the zone |
+| GET/POST/PATCH/DELETE | `/api/zones[/:id]` | Geofences. GeoJSON Polygon or MultiPolygon in, Feature or FeatureCollection out. Body `scope`: `personal` (default, any signed-in user) or `shared` (operators). `active` turns alerts on (default off). Properties include `scope`, `color`, `description`, `preset`, `area_nm2`, `perimeter_nm`. Max 200 personal zones per user |
+| GET | `/api/zones/:id/vessels?limit=&hours=` | `{total, vessels}`: vessels inside the zone now, from their latest positions (works with alerts off) |
+| GET/POST/PATCH/DELETE | `/api/annotations[/:id]?kind=&bbox=&scope=` | Map annotations, currently `kind: "pin"` (GeoJSON Point, `style: {color, icon}` with icon one of pin, anchor, flag, warning, camera, star). Same scopes as zones. PATCH can move a pin (`geometry`). Max 1,000 personal annotations per user. New kinds are added in `src/api/annotations/kinds.ts` |
 | GET | `/api/alerts?status=open&type=&severity=&mmsi=&since=&before=&limit=` | Keyset pagination with `before` |
 | GET | `/api/alerts/summary` | Open alerts counted by type and severity |
 | POST | `/api/alerts/:id/ack` | Operator |
 | POST | `/api/auth/register` | `{email, password (≥10 chars), name?}` → same response as login, role `viewer`. 409 if the email is taken |
 | POST | `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout` | Register, login and refresh are rate-limited to 10/min |
 | GET | `/api/auth/me` | id, email, role, name |
-| GET/PUT/DELETE | `/api/me/preferences` | The signed-in user's settings: `{settings: {mode, view: {lat, lng, zoom}, baseLayer, overlays, …}}`. PUT replaces the document; max 16 KB; unknown keys are kept |
+| GET/PUT/DELETE | `/api/me/preferences` | The signed-in user's settings: `{settings: {mode, view: {lat, lng, zoom}, baseLayer, overlays, …}}`. PUT replaces the document; max 128 KB; unknown keys are kept |
 | POST | `/api/auth/password` | |
 | GET/POST/PATCH | `/api/users`, GET `/api/audit` | Admin |
 | GET | `/api/health`, `/api/stats` | DB, Redis, ingest freshness, counts and storage size |
+
+### Ownership scopes (zones, annotations)
+
+User-made map objects are either **shared** (`owner_id` NULL: visible to everyone, changed by operators and admins; the preset waterways are shared) or **personal** (visible to and changed by their owner only). Another user's personal object answers 404, never 403. Alerts from personal zones are only returned to their owner and are not broadcast over the WebSocket. The rules live in `src/api/auth/scope.ts`.
 
 ### WebSocket `/ws[?token=...]`
 

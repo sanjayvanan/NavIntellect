@@ -18,7 +18,12 @@ export const defaults = {
   view: null, // last map view { lat, lng, zoom }; null = world overview
   baseLayer: baseLayers[0].name,
   overlays: [], // names of active overlay layers
+  hidden: { zone: [], pin: [] }, // ids of map objects hidden from the map, per object type
 }
+
+/** Map-object types whose visibility is saved (add a type here when adding a new kind of object). */
+export const HIDEABLE_TYPES = ['zone', 'pin']
+const MAX_HIDDEN_PER_TYPE = 1000
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const wrapLng = (lng) => (lng >= -180 && lng <= 180 ? lng : ((((lng + 180) % 360) + 360) % 360) - 180)
@@ -41,6 +46,13 @@ export function sanitizeSettings(saved) {
       : null
   if (!baseLayers.some((l) => l.name === s.baseLayer)) s.baseLayer = defaults.baseLayer
   s.overlays = Array.isArray(s.overlays) ? s.overlays.filter((n) => overlayLayers.some((o) => o.name === n)) : []
+  // `hiddenZones` (array) is the older form of hidden.zone; carry it over.
+  const legacy = Array.isArray(saved?.hiddenZones) ? { zone: saved.hiddenZones } : {}
+  const src = { ...legacy, ...(saved?.hidden && typeof saved.hidden === 'object' ? saved.hidden : {}) }
+  s.hidden = Object.fromEntries(
+    HIDEABLE_TYPES.map((t) => [t, Array.isArray(src[t]) ? src[t].filter((id) => typeof id === 'string').slice(0, MAX_HIDDEN_PER_TYPE) : []]),
+  )
+  delete s.hiddenZones
   return s
 }
 
@@ -85,8 +97,22 @@ export const themeSlice = createSlice({
         ? state.overlays.filter((n) => n !== name)
         : [...state.overlays, name]
     },
+    // Show/hide map objects: { type: 'zone' | 'pin', ids, hidden }
+    setHidden: (state, action) => {
+      const { type, ids, hidden } = action.payload
+      if (!HIDEABLE_TYPES.includes(type)) return
+      const set = new Set(state.hidden[type])
+      for (const id of ids) hidden ? set.add(id) : set.delete(id)
+      state.hidden[type] = [...set].slice(0, MAX_HIDDEN_PER_TYPE)
+    },
     // "Reset to defaults" in Settings: display options only; the user stays where they are on the map.
-    resetSettings: (state) => ({ ...defaults, view: state.view, baseLayer: state.baseLayer, overlays: state.overlays }),
+    resetSettings: (state) => ({
+      ...defaults,
+      view: state.view,
+      baseLayer: state.baseLayer,
+      overlays: state.overlays,
+      hidden: state.hidden,
+    }),
   },
 })
 
@@ -102,6 +128,7 @@ export const {
   setMapView,
   setBaseLayer,
   toggleOverlay,
+  setHidden,
   resetSettings,
 } = themeSlice.actions
 export default themeSlice.reducer

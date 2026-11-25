@@ -19,7 +19,8 @@ const settingsSchema = z
     overlays: z.array(z.string().max(100)).max(50).optional(),
   });
 
-const PREFS_LIMIT = 16 * 1024;
+// Room for ~1,000 hidden ids per map-object type (≈ 39 bytes each) plus the rest of the settings.
+const PREFS_LIMIT = 128 * 1024;
 
 export async function preferenceRoutes(app: FastifyInstance) {
   const viewer = { preHandler: requireRole('viewer') };

@@ -53,6 +53,8 @@ export async function wsRoutes(app: FastifyInstance, opts: { subscriber: Redis }
         for (const s of JSON.parse(payload) as LegacyShip[]) pending.set(s.mmsi, s);
       } else if (channel === CHANNELS.alerts) {
         for (const a of JSON.parse(payload) as AlertRow[]) {
+          // Personal-zone alerts stay private: their owner reads them via the authenticated REST API.
+          if (a.zone_owner_id) continue;
           const msg = JSON.stringify({ type: 'alert', data: a });
           for (const c of clients) if (c.alerts) send(c, msg);
         }

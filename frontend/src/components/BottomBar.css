@@ -48,6 +48,59 @@
   margin-bottom: 30px;
 }
 
+/* Credits collapsed to a small ⓘ; full text on hover, keyboard focus or tap (CompactAttribution). */
+.leaflet-control-attribution.attribution-compact {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  margin-right: 6px;
+  padding: 0;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  white-space: nowrap;
+  color: transparent;
+  cursor: pointer;
+  transition: width 0.2s ease, padding 0.2s ease, color 0.15s ease;
+}
+
+.leaflet-control-attribution.attribution-compact::before {
+  content: 'i';
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  color: #3b4350;
+  font: italic 700 12px/1 Georgia, serif;
+}
+
+.leaflet-control-attribution.attribution-compact a {
+  color: transparent;
+}
+
+.leaflet-control-attribution.attribution-compact:hover,
+.leaflet-control-attribution.attribution-compact:focus-visible,
+.leaflet-control-attribution.attribution-compact.open {
+  width: auto;
+  max-width: min(620px, calc(100vw - 120px));
+  height: auto;
+  padding: 3px 28px 3px 10px;
+  color: #333;
+  white-space: normal;
+  line-height: 1.4;
+  outline: none;
+}
+
+.leaflet-control-attribution.attribution-compact:hover a,
+.leaflet-control-attribution.attribution-compact:focus-visible a,
+.leaflet-control-attribution.attribution-compact.open a {
+  color: #0078a8;
+}
+
 @media (max-width: 768px) {
   .bottom-bar {
     display: none;

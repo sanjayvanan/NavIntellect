@@ -2,6 +2,7 @@ import { configureStore } from '@reduxjs/toolkit'
 import themeReducer from './themeSlice'
 import shipReducer from './shipSlice'
 import authReducer from './authSlice'
+import { mapObjectsReducers } from '../features/mapObjects'
 import { settingsSync } from './settingsSync'
 import { errorMiddleware } from '../middleware/errorMiddleware'
 
@@ -10,6 +11,7 @@ export const store = configureStore({
     auth: authReducer,
     theme: themeReducer,
     ships: shipReducer,
+    ...mapObjectsReducers,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

@@ -4,6 +4,7 @@ import { LEGACY_SHIP_COLUMNS } from '../../db/legacy.js';
 import { pool } from '../../db/pool.js';
 import { readAccess } from '../auth/guard.js';
 import { bboxParam, bboxSql, HttpError, mmsiParam, notFound, parse } from '../errors.js';
+import { visibleSql } from '../auth/scope.js';
 
 const listQuery = z.object({
   q: z.string().trim().min(1).max(64).optional(),
@@ -80,9 +81,10 @@ export async function vesselRoutes(app: FastifyInstance) {
               (SELECT to_jsonb(x) FROM (SELECT ${LEGACY_SHIP_COLUMNS}, l.nav_status::int4 AS nav_status, l.rot::int4 AS rot
                                         FROM vessel_latest l WHERE l.mmsi = v.mmsi) x) AS latest,
               COALESCE((SELECT jsonb_agg(jsonb_build_object('id', z.id, 'name', z.name, 'kind', z.kind, 'entered_at', p.entered_at))
-                        FROM zone_presence p JOIN zones z ON z.id = p.zone_id WHERE p.mmsi = v.mmsi), '[]'::jsonb) AS zones
+                        FROM zone_presence p JOIN zones z ON z.id = p.zone_id
+                        WHERE p.mmsi = v.mmsi AND ${visibleSql('z', 2)}), '[]'::jsonb) AS zones
        FROM vessels v WHERE v.mmsi = $1`,
-      [mmsi],
+      [mmsi, req.user?.id ?? null],
     );
     if (!rows[0]) throw notFound('Vessel');
     return rows[0];

@@ -8,16 +8,15 @@ function ZoomControl() {
   const theme = useSelector((state) => state.theme.mode)
   const map = useMap()
   const ref = useIsolateFromMap()
-  const [zoomLevel, setZoomLevel] = useState(map.getZoom())
+  const [zoomLevel, setZoomLevel] = useState(() => Math.round(map.getZoom()))
 
+  // Rounded, so animations through fractional zooms re-render only when the shown level changes
+  // (React skips the update when the value is the same).
   useEffect(() => {
-    const updateZoom = () => {
-      setZoomLevel(map.getZoom())
-    }
-
-    map.on('zoom', updateZoom)
+    const updateZoom = () => setZoomLevel(Math.round(map.getZoom()))
+    map.on('zoom zoomend', updateZoom)
     return () => {
-      map.off('zoom', updateZoom)
+      map.off('zoom zoomend', updateZoom)
     }
   }, [map])
 

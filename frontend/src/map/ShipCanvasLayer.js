@@ -1,5 +1,7 @@
 import L from 'leaflet'
 import { shipCategories } from '../config/shipCategories'
+import { normalisePositions, worldSize } from './projection'
+import { zoomToBounds } from './navigation'
 
 // The ship arrow from assets/ShipIcon.svg (viewBox 38x33, nose pointing east), centred.
 const ARROW = [[37, 16.6], [1.2, 1.7], [8.1, 16.6], [1.2, 31.6]].map(([x, y]) => [x - 19, y - 16.6])
@@ -7,9 +9,12 @@ const SELECTED_COLOR = '#f44336'
 const HIT_RADIUS_PX = 10
 
 // Clustering: ships within the same CLUSTER_CELL_PX square (in world pixels, so clusters stay
-// stable while panning) are drawn as one bubble, until CLUSTER_MAX_ZOOM.
+// stable while panning) are drawn as one bubble, until CLUSTER_MAX_ZOOM. The grid uses the
+// integer zoom, so bubbles don't reshuffle on every frame of a fractional-zoom animation.
 const CLUSTER_CELL_PX = 60
 const CLUSTER_MAX_ZOOM = 12
+// Clicking a cluster zooms in by at most this many levels (one smooth CSS zoom animation).
+const CLUSTER_CLICK_MAX_ZOOM_STEP = 4
 // Same colour scheme as Leaflet.markercluster: small / medium / large clusters.
 const CLUSTER_STYLES = [
   { max: 10, radius: 14, outer: 'rgba(181, 226, 140, 0.6)', inner: 'rgba(110, 204, 57, 0.85)' },
@@ -45,6 +50,7 @@ export const ShipCanvasLayer = L.Layer.extend({
   initialize(options) {
     L.setOptions(this, options)
     this._ships = []
+    this._pos = { xs: new Float64Array(0), ys: new Float64Array(0) } // normalised Mercator, index-aligned with _ships
     this._selected = null
     this._hits = [] // [x, y, ship] of individual ships drawn in the last frame
     this._clusterHits = [] // [x, y, radius, cluster] of cluster bubbles drawn in the last frame
@@ -84,6 +90,8 @@ export const ShipCanvasLayer = L.Layer.extend({
   /** ships: legacy rows; selected: the selected ship (drawn on top, never clustered). */
   setData(ships, selected) {
     this._ships = ships || []
+    // Project once per data update; each frame is then a multiply-add per ship.
+    this._pos = normalisePositions(this._ships, (s) => s.latitude, (s) => s.longitude)
     this._selected = selected || null
     this._schedule()
   },
@@ -147,24 +155,30 @@ export const ShipCanvasLayer = L.Layer.extend({
     const origin = map.getPixelBounds().min // world pixel of the container's top-left corner
     const margin = 30
 
-    // 1. Project visible ships once (world pixels -> container pixels).
+    // 1. Visible ships in container pixels (normalised Mercator × world size − viewport origin).
+    const ships = this._ships
+    const { xs, ys } = this._pos
+    const scale = worldSize(zoom)
     const visible = []
-    for (const ship of this._ships) {
-      if (ship.mmsi === selectedMmsi || ship.latitude == null) continue
-      const w = map.project([ship.latitude, ship.longitude], zoom)
-      const x = w.x - origin.x
-      const y = w.y - origin.y
+    for (let i = 0; i < ships.length; i++) {
+      const nx = xs[i]
+      if (nx !== nx) continue // NaN: no position
+      const ship = ships[i]
+      if (ship.mmsi === selectedMmsi) continue
+      const x = nx * scale - origin.x
+      const y = ys[i] * scale - origin.y
       if (x < -margin || y < -margin || x > size.x + margin || y > size.y + margin) continue
-      visible.push({ ship, x, y, wx: w.x, wy: w.y })
+      visible.push({ ship, x, y, i })
     }
 
-    // 2. Cluster (optional): group by world-pixel grid cell.
+    // 2. Cluster (optional): group by grid cell in world pixels at the integer zoom.
     let singles = visible
     const clusters = []
     if (this.options.clustering && zoom < CLUSTER_MAX_ZOOM && visible.length > 1) {
       const cells = new Map()
+      const gridScale = worldSize(Math.floor(zoom)) / CLUSTER_CELL_PX
       for (const v of visible) {
-        const key = `${Math.floor(v.wx / CLUSTER_CELL_PX)}:${Math.floor(v.wy / CLUSTER_CELL_PX)}`
+        const key = `${Math.floor(xs[v.i] * gridScale)}:${Math.floor(ys[v.i] * gridScale)}`
         const cell = cells.get(key)
         if (cell) cell.push(v)
         else cells.set(key, [v])
@@ -281,27 +295,41 @@ export const ShipCanvasLayer = L.Layer.extend({
     return null
   },
 
+  /**
+   * Zooms into a cluster with one CSS zoom animation (GPU-scaled tiles and canvas, a single
+   * redraw at zoomend) instead of flyTo, which redraws everything on every frame and loads tiles
+   * at each intermediate zoom. Very large clusters take more than one click.
+   */
   _zoomToCluster(cluster) {
     const map = this._map
-    const lats = cluster.members.map((m) => m.ship.latitude)
-    const lons = cluster.members.map((m) => m.ship.longitude)
-    const bounds = L.latLngBounds([Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)])
-    const zoom = map.getZoom()
-    if (bounds.getNorthEast().equals(bounds.getSouthWest())) {
-      map.flyTo(bounds.getCenter(), Math.min(zoom + 2, map.getMaxZoom()))
-    } else {
-      map.flyToBounds(bounds.pad(0.25), { maxZoom: Math.min(zoom + 4, map.getMaxZoom()) })
+    let minLat = Infinity
+    let minLng = Infinity
+    let maxLat = -Infinity
+    let maxLng = -Infinity
+    for (const { ship } of cluster.members) {
+      if (ship.latitude < minLat) minLat = ship.latitude
+      if (ship.latitude > maxLat) maxLat = ship.latitude
+      if (ship.longitude < minLng) minLng = ship.longitude
+      if (ship.longitude > maxLng) maxLng = ship.longitude
     }
+    const zoom = map.getZoom()
+    const maxZoom = Math.min(zoom + CLUSTER_CLICK_MAX_ZOOM_STEP, map.getMaxZoom())
+    const bounds = L.latLngBounds([minLat, minLng], [maxLat, maxLng])
+    if (bounds.getNorthEast().equals(bounds.getSouthWest())) bounds.extend(bounds.getCenter().toBounds(200)) // stacked ships
+    zoomToBounds(map, bounds, { padding: [60, 60], maxZoom, minZoom: Math.min(zoom + 1, maxZoom) })
   },
 
   _onClick(e) {
+    if (this._map._drawingActive) return // a geofence/ruler is being drawn: clicks place points
     const hit = this._hitTest(e.containerPoint)
+    e.shipHit = !!hit // lets the zones layer skip clicks that landed on a ship
     if (hit?.ship) this.options.onSelect?.(hit.ship)
     else if (hit?.cluster) this._zoomToCluster(hit.cluster)
     else this.options.onEmptyClick?.()
   },
 
   _onMouseMove(e) {
+    if (this._map._drawingActive) return this._clearHover()
     const hit = this._hitTest(e.containerPoint)
     if (!hit) {
       this._clearHover()

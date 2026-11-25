@@ -1,9 +1,12 @@
 import { MapContainer, LayerGroup } from 'react-leaflet'
 import { useSelector } from 'react-redux'
 import ShipLayer from './ShipLayer'
+import { MapObjectsLayers } from '../features/mapObjects'
+import MapContextMenu from './MapContextMenu'
 import ZoomControl from './ZoomControl'
 import MapAutoResize from './MapAutoResize'
 import MapViewPersistence from './MapViewPersistence'
+import CompactAttribution from './CompactAttribution'
 import 'leaflet/dist/leaflet.css'
 import BottomBar from './BottomBar'
 
@@ -34,9 +37,12 @@ function MapComponent({ children }) {
     >
       <MapAutoResize />
       <MapViewPersistence />
+      <CompactAttribution />
       {children}
       
       {/* Ship Layer */}
+      <MapObjectsLayers />
+      <MapContextMenu />
       <LayerGroup>
         <ShipLayer />
       </LayerGroup>

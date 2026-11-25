@@ -7,18 +7,10 @@ import { fetchShips, setSelectedShip, upsertShips, FULL_DETAIL_ZOOM } from '../s
 import { connectLiveSocket } from '../services/liveSocket'
 import { boundsToBbox } from '../utils/mapBbox'
 import { ShipCanvasLayer } from '../map/ShipCanvasLayer'
+import { zoomToPoint } from '../map/navigation'
 import SearchBox from './SearchBox'
 import { DENSITY_LEVELS } from '../config/shipDensity'
-
-const decimalToDMS = (decimal, isLatitude) => {
-  const direction = isLatitude ? (decimal >= 0 ? 'N' : 'S') : decimal >= 0 ? 'E' : 'W'
-  const absolute = Math.abs(decimal)
-  const degrees = Math.floor(absolute)
-  const minutesDecimal = (absolute - degrees) * 60
-  const minutes = Math.floor(minutesDecimal)
-  const seconds = ((minutesDecimal - minutes) * 60).toFixed(2)
-  return `${degrees}° ${minutes}' ${seconds}" ${direction}`
-}
+import { toDMS } from '../utils/coords'
 
 const formatLastReport = (timestamp) => {
   if (!timestamp) return 'No report time'
@@ -84,8 +76,8 @@ const renderShipPopup = (ship, theme) => {
             <span>Position</span>
           </div>
           <div className="detail-value coordinates">
-            <span title={`${ship.latitude.toFixed(6)}°`}>{decimalToDMS(ship.latitude, true)}</span>
-            <span title={`${ship.longitude.toFixed(6)}°`}>{decimalToDMS(ship.longitude, false)}</span>
+            <span title={`${ship.latitude.toFixed(6)}°`}>{toDMS(ship.latitude, true)}</span>
+            <span title={`${ship.longitude.toFixed(6)}°`}>{toDMS(ship.longitude, false)}</span>
           </div>
         </div>
 
@@ -126,7 +118,7 @@ function ShipLayer() {
   const selectShip = (ship) => {
     if (!ship || ship.latitude == null || ship.longitude == null) return
     dispatch(setSelectedShip(ship))
-    map.flyTo([ship.latitude, ship.longitude], Math.max(map.getZoom(), 12), { duration: 1.5 })
+    zoomToPoint(map, [ship.latitude, ship.longitude], Math.max(map.getZoom(), 12))
   }
   const selectRef = useRef(selectShip)
   selectRef.current = selectShip
