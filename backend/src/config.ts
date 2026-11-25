@@ -27,8 +27,14 @@ const schema = z.object({
   DATABASE_SSL_CA: z.string().optional(),
   DATABASE_POOL_MAX: z.coerce.number().int().positive().default(5),
   DB_SCHEMA: z.string().default('ais'),
-  POSITIONS_RETENTION_DAYS: z.coerce.number().int().positive().default(3),
-  TRACKS_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+  /** Raw per-message rows (hot tail). Packed into vessel_tracks hourly, then dropped. */
+  RAW_RETENTION_HOURS: z.coerce.number().int().min(2).default(3),
+  /** Packed track history. ~3 days of worldwide AIS fits the 500 MB Supabase free tier. */
+  TRACKS_RETENTION_DAYS: z.coerce.number().int().positive().default(3),
+  /** Ships not heard from in this long disappear from the live map (static data is kept). */
+  LATEST_RETENTION_DAYS: z.coerce.number().int().positive().default(7),
+  /** Database plan limit; above 85 % the oldest track day is dropped (Supabase free tier = 500). */
+  DB_SIZE_LIMIT_MB: z.coerce.number().int().positive().default(500),
   /** History sampling: at most one stored point per vessel per N seconds (0 = keep every message). */
   POSITIONS_SAMPLE_SECONDS: z.coerce.number().int().min(0).default(120),
   REDIS_URL: z.string().default('redis://localhost:6379'),

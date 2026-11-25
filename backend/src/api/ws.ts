@@ -30,8 +30,10 @@ const clientMsg = z.object({
 const PUSH_INTERVAL_MS = 1000;
 const MAX_BUFFERED_BYTES = 2 * 1024 * 1024;
 
+/** minLon > maxLon means the box crosses the antimeridian (same rule as bboxSql). */
 const inBox = (s: LegacyShip, b: BBox) =>
-  s.longitude >= b[0] && s.latitude >= b[1] && s.longitude <= b[2] && s.latitude <= b[3];
+  s.latitude >= b[1] && s.latitude <= b[3] &&
+  (b[0] <= b[2] ? s.longitude >= b[0] && s.longitude <= b[2] : s.longitude >= b[0] || s.longitude <= b[2]);
 
 /**
  * WebSocket at /ws. Protocol:

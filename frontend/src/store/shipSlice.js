@@ -13,11 +13,25 @@ const applyFilters = (ships, filters) => {
   )
 }
 
+// Most recently heard ships per map request; the world has 50k+, more than the map can draw.
+export const MAP_SHIP_LIMIT = 3000
+// Must match FULL_DETAIL_ZOOM in backend/src/api/shipCache.ts.
+export const FULL_DETAIL_ZOOM = 10
+
+/**
+ * Loads ships for the map.
+ * - bbox: [minLon, minLat, maxLon, maxLat] of the viewport, or null for anywhere
+ * - zoom: map zoom; zoomed out, the server returns one representative ship per ~32 px cell
+ *   (level of detail), zoomed in (>= FULL_DETAIL_ZOOM) every ship
+ */
 export const fetchShips = createAsyncThunk(
   'ships/fetchShips',
-  async (_, { rejectWithValue }) => {
+  async ({ bbox = null, zoom = null } = {}, { rejectWithValue, signal }) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/ships/trackList?hours=50`)
+      const params = new URLSearchParams({ hours: '50', limit: String(MAP_SHIP_LIMIT) })
+      if (bbox) params.set('bbox', bbox.join(','))
+      if (zoom != null) params.set('zoom', String(Math.floor(zoom)))
+      const response = await fetch(`${API_BASE_URL}/api/ships/trackList?${params}`, { signal })
       if (!response.ok) throw new Error('Server Error')
       return response.json()
     } catch (error) {
@@ -31,6 +45,7 @@ const initialState = {
   filteredShips: [],
   status: 'idle',
   error: null,
+  currentRequestId: null, // latest fetchShips request; older responses are ignored
   selectedShip: null,
   filters: {
     type: null,
@@ -72,19 +87,26 @@ export const shipSlice = createSlice({
       state.filters.searchQuery = action.payload
       state.filteredShips = applyFilters(state.data, state.filters)
     },
-    // Merges live WebSocket updates (same shape as trackList rows) into the list by MMSI.
+    // Merges live updates (same shape as trackList rows) by MMSI.
+    // Payload: ships[] (adds new ships) or { ships, addNew: false } (only refresh ships already
+    // shown, used when zoomed out so live updates don't undo the level-of-detail thinning).
     upsertShips: (state, action) => {
+      const { ships, addNew } = Array.isArray(action.payload) ? { ships: action.payload, addNew: true } : action.payload
       const index = new Map(state.data.map((ship, i) => [ship.mmsi, i]))
-      for (const ship of action.payload) {
+      let changed = false
+      for (const ship of ships) {
         const i = index.get(ship.mmsi)
         if (i === undefined) {
+          if (!addNew) continue
+          changed = true
           index.set(ship.mmsi, state.data.length)
           state.data.push(ship)
         } else {
           state.data[i] = ship
+          changed = true
         }
       }
-      state.filteredShips = applyFilters(state.data, state.filters)
+      if (changed) state.filteredShips = applyFilters(state.data, state.filters)
     },
     clearFilters: (state) => {
       state.filters = initialState.filters
@@ -93,16 +115,20 @@ export const shipSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(fetchShips.pending, (state) => {
+      .addCase(fetchShips.pending, (state, action) => {
         state.status = 'loading'
+        state.currentRequestId = action.meta.requestId
       })
       .addCase(fetchShips.fulfilled, (state, action) => {
+        // Panning fires several requests; only the newest one may replace the list.
+        if (action.meta.requestId !== state.currentRequestId) return
         state.status = 'succeeded'
         state.data = action.payload
         state.filteredShips = applyFilters(action.payload, state.filters)
         state.error = null
       })
       .addCase(fetchShips.rejected, (state, action) => {
+        if (action.meta.requestId !== state.currentRequestId) return
         state.status = 'failed'
         state.error = action.payload || 'Failed to fetch ships'
       })

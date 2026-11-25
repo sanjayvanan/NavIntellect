@@ -3,9 +3,10 @@ import { API_BASE_URL } from '../store/shipSlice'
 /**
  * Live vessel updates over WebSocket (/ws). Reconnects with backoff.
  * The 60s REST poll in ShipLayer stays as a fallback.
- * Returns a function that closes the connection.
+ * Only ships inside `bbox` ([minLon, minLat, maxLon, maxLat], null = everywhere) are pushed;
+ * call setBbox() when the map moves. Returns { setBbox, close }.
  */
-export function connectLiveSocket({ onVessels, onAlert, token } = {}) {
+export function connectLiveSocket({ onVessels, onAlert, token, bbox = null } = {}) {
   const url = new URL('/ws', API_BASE_URL.replace(/^http/, 'ws'))
   if (token) url.searchParams.set('token', token)
 
@@ -13,12 +14,19 @@ export function connectLiveSocket({ onVessels, onAlert, token } = {}) {
   let attempt = 0
   let stopped = false
   let retryTimer = null
+  let currentBbox = bbox
+
+  const subscribe = () => {
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ subscribe: { bbox: currentBbox, alerts: true } }))
+    }
+  }
 
   const connect = () => {
     ws = new WebSocket(url)
     ws.onopen = () => {
       attempt = 0
-      ws.send(JSON.stringify({ subscribe: { bbox: null, alerts: true } }))
+      subscribe()
     }
     ws.onmessage = (event) => {
       let msg
@@ -38,9 +46,15 @@ export function connectLiveSocket({ onVessels, onAlert, token } = {}) {
   }
 
   connect()
-  return () => {
-    stopped = true
-    clearTimeout(retryTimer)
-    ws?.close()
+  return {
+    setBbox(next) {
+      currentBbox = next
+      subscribe()
+    },
+    close() {
+      stopped = true
+      clearTimeout(retryTimer)
+      ws?.close()
+    },
   }
 }

@@ -46,5 +46,15 @@ export const bboxParam = z
   );
 export type BBox = z.infer<typeof bboxParam>;
 
+/**
+ * SQL predicate for a [minLon, minLat, maxLon, maxLat] box bound at $start..$start+3, on a table
+ * alias with lat/lon columns. Plain lat/lon comparison (not geography) so world-sized boxes work;
+ * minLon > maxLon means the box crosses the antimeridian.
+ */
+export function bboxSql(alias: string, start: number): string {
+  const [x1, y1, x2, y2] = [start, start + 1, start + 2, start + 3].map((i) => `$${i}::float8`);
+  return `(${alias}.lat BETWEEN ${y1} AND ${y2} AND CASE WHEN ${x1} <= ${x2} THEN ${alias}.lon BETWEEN ${x1} AND ${x2} ELSE (${alias}.lon >= ${x1} OR ${alias}.lon <= ${x2}) END)`;
+}
+
 export const mmsiParam = z.object({ mmsi: z.coerce.number().int().min(1).max(999_999_999) });
 export const uuidParam = z.object({ id: z.uuid() });

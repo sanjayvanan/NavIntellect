@@ -42,14 +42,27 @@ No Supabase? `docker compose --profile local-db up -d db` gives a local PostGIS 
 |---|---|---|
 | `vessels` | table, PK `mmsi` | Static identity: name, IMO, callsign, type, dimensions, destination, ETA. Holds a stable `uuid` for the UI. Trigram index on name for search. |
 | `vessel_latest` | table, PK `mmsi` | Hot, one row per vessel. This is what the live map reads. GIST index on `geom`. The upsert only moves forward in time (`WHERE excluded.ts > cur.ts`). |
-| `vessel_positions` | **partitioned** by day (native Postgres) | Full position history. PK `(mmsi, ts)` dedupes repeats. The ingestor pre-creates partitions 7 days ahead and drops whole partitions past 90 days (`POSITIONS_RETENTION_DAYS`), so retention is instant with no bloat. |
-| `vessel_tracks_1m` | rollup table | 1-minute downsampled tracks for long ranges, refreshed every minute by the ingestor (re-covers the last 5 min for late data). Track queries add the not-yet-rolled-up tail from raw data. Kept 365 days, longer than raw data. |
+| `vessel_positions` | raw, **hourly** partitions | One row per message (~150 B). It is the hot tail only: hours are packed into `vessel_tracks` 10 minutes after they close, and their partitions are dropped after `RAW_RETENTION_HOURS`. Partitions are never dropped before they are packed. |
+| `vessel_tracks` | packed, **daily** partitions | One row per vessel per 6-hour block. Points are packed into `bytea` at 16 B each: time, lat/lon at 1e-6°, sog, cog, heading. That is about 20 B per point with overhead, roughly 7× smaller than raw rows. Block bounding boxes have a GIST index for area queries. Decode with `track_points(pts, block_start)`. Kept `TRACKS_RETENTION_DAYS`. |
 | `zones` | table | Geofences as `geography(MultiPolygon)` with a GIST index, plus `rules` jsonb. |
 | `zone_presence` | table | Which vessel is inside which zone. Drives the enter, exit, loiter and gap logic. |
 | `alerts` | table | Typed alerts with severity, position and details. Has a partial index on open alerts and a cooldown dedupe. |
 | `users`, `refresh_tokens` | tables | argon2id password hashes. Refresh tokens are opaque, rotating and stored hashed; replaying an old one revokes all of that user's sessions. |
 | `audit_log` | table | Who created or changed zones and users, and who acknowledged alerts. |
-| `job_state` | table | Watermarks for background jobs (the 1-minute rollup). |
+| `job_state` | table | Watermarks for background jobs. `tracks` marks where packed history ends and the raw tail begins. |
+
+### Storage budget (Supabase free tier, 500 MB)
+Measured worldwide on aisstream: about 55 positions/s, which is about 4.75 M per day from about 25 k ships an hour.
+
+| Data | Cost | In 500 MB |
+|---|---|---|
+| Ships, which feed the map and search (`vessels` + `vessel_latest`) | ~630 B per ship | 100 k ships ≈ 65 MB |
+| Raw tail (`vessel_positions`) | ~150 B per point | 3 h ≈ 60–90 MB |
+| Packed history (`vessel_tracks`) | ~20 B per point | **~3 days worldwide** |
+
+History is also thinned to at most one point per ship every `POSITIONS_SAMPLE_SECONDS` (default 120 s). The live map always gets every message.
+
+A **storage guard** runs every 10 minutes. Above 85 % of `DB_SIZE_LIMIT_MB` it drops the oldest past day of tracks, because Supabase turns an over-limit database read-only. On a paid plan, raise `DB_SIZE_LIMIT_MB` and `TRACKS_RETENTION_DAYS`. `GET /api/stats` shows the current use.
 
 ### Ingestion
 - **Normalizing:** `normalize.ts` turns aisstream envelopes into position and static messages.
@@ -82,10 +95,11 @@ Reads are open while `AUTH_REQUIRED_FOR_READS=false`, which is the default becau
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/ships/trackList?hours=50[&bbox=minLon,minLat,maxLon,maxLat]` | **Legacy contract**: flat array in the frontend's shape |
-| GET | `/api/vessels?q=&bbox=&limit=` | Search by name, MMSI, IMO or callsign |
+| GET | `/api/ships/trackList?hours=50[&bbox=minLon,minLat,maxLon,maxLat][&limit=]` | **Legacy contract**: flat array in the frontend's shape. The map sends its viewport bbox and `limit=3000`. A bbox with minLon > maxLon crosses the antimeridian |
+| GET | `/api/vessels?q=&bbox=&limit=` | Searches every known vessel by name, MMSI, IMO or callsign. Exact matches rank first, then name prefix, then fuzzy name, then recency. Rows use the map shape |
 | GET | `/api/vessels/:mmsi` | Static data, latest position, zones the vessel is currently in |
-| GET | `/api/vessels/:mmsi/track?from=&to=&tolerance=&resolution=auto\|raw\|1m` | GeoJSON LineString with timestamps |
+| GET | `/api/vessels/:mmsi/track?from=&to=&tolerance=` | GeoJSON LineString with timestamps, combining packed history and the raw tail |
+| GET | `/api/tracks/area?bbox=&from=&to=&limit=` | Vessels that were inside an area during a time window |
 | GET/POST/PATCH/DELETE | `/api/zones[/:id]` | GeoJSON Polygon or MultiPolygon in, Feature or FeatureCollection out. Writes need operator |
 | GET | `/api/zones/:id/vessels` | Vessels currently inside the zone |
 | GET | `/api/alerts?status=open&type=&severity=&mmsi=&since=&before=&limit=` | Keyset pagination with `before` |
@@ -114,3 +128,11 @@ Vessel updates are coalesced per MMSI and sent at most once per second, filtered
 | `npm run capture -- 30` | Records 30 s of raw aisstream traffic to `test/fixtures/aisstream-sample.jsonl` and prints how each message type normalized. Run this once with your key to confirm the live wire format. |
 | `npm run replay -- file.jsonl --shift` | Feeds a recording through the full pipeline. Useful for offline demos. |
 | `npm run build` / `start:api` / `start:ingestor` | Production build and start. |
+
+## Extending with AI
+The schema is built so an AI assistant can be added without restructuring:
+
+- **Text-to-SQL or agent tools:** every table lives in the `ais` schema with typed columns and indexes. A future assistant can get a read-only role on that schema (`GRANT USAGE ON SCHEMA ais`, `GRANT SELECT ON ALL TABLES IN SCHEMA ais`). `track_points()` makes packed history queryable as plain rows.
+- **Tool calling:** the REST endpoints are small, validated JSON functions: search, profile, track, area-in-time-window, alerts and zones. An OpenAPI spec can be generated with `@fastify/swagger` and handed to a model as tools.
+- **Semantic search or memory:** the `vector` (pgvector) extension is available on Supabase. Enable it in `extensions` and add embedding columns or tables, for example vessel profiles or alert narratives, in a new migration.
+- **Events to reason over:** `alerts`, `zone_presence` and `audit_log` record what happened, to whom and when.

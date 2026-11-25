@@ -43,8 +43,10 @@ batcher.start();
 stream.start();
 // Replaces TimescaleDB background jobs: daily partitions, retention, 1-minute track rollup.
 const stopMaintenance = startMaintenance({
-  positionsRetentionDays: config.POSITIONS_RETENTION_DAYS,
+  rawRetentionHours: config.RAW_RETENTION_HOURS,
   tracksRetentionDays: config.TRACKS_RETENTION_DAYS,
+  latestRetentionDays: config.LATEST_RETENTION_DAYS,
+  dbSizeLimitMb: config.DB_SIZE_LIMIT_MB,
 });
 
 // AIS-gap sweep every minute.

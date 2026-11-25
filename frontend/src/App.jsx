@@ -18,11 +18,11 @@ function App() {
         <button 
           className={`cluster-toggle-btn ${theme} ${clustering ? 'active' : ''}`}
           onClick={() => dispatch(toggleClustering())}
-          title={clustering ? 'Disable clustering' : 'Enable clustering'}
+          title={clustering ? 'Declutter on: fewer ships when zoomed out (click to show every ship in view)' : 'Showing every ship in view (click to declutter)'}
         >
           <img 
             src={clusterIcon} 
-            alt="clustering"
+            alt="declutter"
             className="cluster-icon"
             height={20}
             width={20}

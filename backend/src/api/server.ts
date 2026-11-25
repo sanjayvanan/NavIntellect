@@ -16,6 +16,7 @@ import { shipRoutes } from './routes/ships.js';
 import { userRoutes } from './routes/users.js';
 import { vesselRoutes } from './routes/vessels.js';
 import { zoneRoutes } from './routes/zones.js';
+import { ShipCache } from './shipCache.js';
 import { wsRoutes } from './ws.js';
 
 export async function buildServer(deps: { redis: Redis; subscriber: Redis }) {
@@ -40,7 +41,10 @@ export async function buildServer(deps: { redis: Redis; subscriber: Redis }) {
   app.setErrorHandler(errorHandler);
 
   await app.register(healthRoutes, { redis: deps.redis });
-  await app.register(shipRoutes);
+  const shipCache = new ShipCache();
+  await shipCache.start(deps.subscriber);
+  app.addHook('onClose', async () => shipCache.stop());
+  await app.register(shipRoutes, { cache: shipCache });
   await app.register(vesselRoutes);
   await app.register(zoneRoutes);
   await app.register(alertRoutes);

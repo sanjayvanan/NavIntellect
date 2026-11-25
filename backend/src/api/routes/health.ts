@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
+import { config } from '../../config.js';
 import { pool } from '../../db/pool.js';
 import { INGEST_STATS_KEY } from '../../shared/redis.js';
 
@@ -37,13 +38,25 @@ export async function healthRoutes(app: FastifyInstance, opts: { redis: Redis })
            (SELECT count(*)::int FROM zones WHERE active) AS zones_active,
            (SELECT count(*)::int FROM alerts WHERE acknowledged_at IS NULL) AS alerts_open,
            (SELECT COALESCE(sum(GREATEST(c.reltuples, 0)), 0)::float8 FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
-             WHERE i.inhparent = 'vessel_positions'::regclass) AS positions_stored_approx,
+             WHERE i.inhparent = 'vessel_positions'::regclass) AS raw_positions_approx,
            (SELECT COALESCE(sum(pg_total_relation_size(i.inhrelid)), 0)::float8 FROM pg_inherits i
-             WHERE i.inhparent = 'vessel_positions'::regclass) AS positions_bytes,
-           (SELECT count(*)::int FROM pg_inherits i WHERE i.inhparent = 'vessel_positions'::regclass) AS position_partitions`,
+             WHERE i.inhparent = 'vessel_positions'::regclass) AS raw_bytes,
+           (SELECT count(*)::int FROM pg_inherits i WHERE i.inhparent = 'vessel_positions'::regclass) AS raw_partitions,
+           (SELECT COALESCE(sum(bytes), 0)::float8 FROM track_partitions()) AS tracks_bytes,
+           (SELECT count(*)::int FROM track_partitions()) AS track_days,
+           (SELECT min(block_start) FROM vessel_tracks) AS tracks_oldest,
+           (SELECT value FROM job_state WHERE name = 'tracks') AS tracks_watermark,
+           pg_database_size(current_database())::float8 AS db_bytes`,
       ),
       ingestStats(),
     ]);
-    return { ...rows[0], ingest };
+    const r = rows[0];
+    const limitBytes = config.DB_SIZE_LIMIT_MB * 1024 * 1024;
+    return {
+      ...r,
+      db_limit_bytes: limitBytes,
+      db_used_pct: Math.round((r.db_bytes / limitBytes) * 1000) / 10,
+      ingest,
+    };
   });
 }

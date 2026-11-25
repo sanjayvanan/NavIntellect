@@ -6,8 +6,8 @@
  */
 export const LEGACY_SHIP_COLUMNS = `
   v.uuid::text                                            AS uuid,
-  l.mmsi::int4                                            AS mmsi,
-  COALESCE(v.name, 'MMSI ' || l.mmsi)                     AS track_name,
+  v.mmsi::int4                                            AS mmsi,
+  COALESCE(v.name, 'MMSI ' || v.mmsi)                     AS track_name,
   COALESCE(v.ship_type_label, 'Vessel')                   AS type,
   l.lat::float8                                           AS latitude,
   l.lon::float8                                           AS longitude,

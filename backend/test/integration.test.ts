@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { hashPassword } from '../src/api/auth/password.js';
 import { buildServer } from '../src/api/server.js';
+import { compactTracks, storageGuard, tracksWatermark } from '../src/db/maintenance.js';
 import { pool } from '../src/db/pool.js';
 import { normalize } from '../src/ingest/normalize.js';
 import { createPipeline } from '../src/ingest/pipeline.js';
@@ -105,18 +106,93 @@ describe('vessels and tracks', () => {
     expect((await app.inject({ url: '/api/vessels/999999998' })).statusCode).toBe(404);
   });
 
-  it('returns a GeoJSON LineString track with times', async () => {
+  it('ranks search results and finds vessels without a position', async () => {
+    await ingest(shipStaticData({ mmsi: 419100030, name: 'NOPOS TESTER' }));
+    const exact = (await app.inject({ url: '/api/vessels?q=419100001' })).json();
+    expect(exact[0].mmsi).toBe(419100001);
+    expect(exact[0]).toMatchObject({ track_name: 'MV ARABIAN STAR', latitude: 18.95 });
+    const prefix = (await app.inject({ url: '/api/vessels?q=4191000&limit=100' })).json() as { mmsi: number }[];
+    expect(prefix.length).toBeGreaterThan(3);
+    expect(prefix.every((r) => String(r.mmsi).startsWith('4191000'))).toBe(true);
+    const twoChars = (await app.inject({ url: '/api/vessels?q=MV' })).json() as { track_name: string }[];
+    expect(twoChars.some((r) => r.track_name === 'MV ARABIAN STAR')).toBe(true);
+    const nopos = (await app.inject({ url: '/api/vessels?q=nopos' })).json();
+    expect(nopos).toHaveLength(1);
+    expect(nopos[0]).toMatchObject({ mmsi: 419100030, track_name: 'NOPOS TESTER', latitude: null });
+    expect((await app.inject({ url: '/api/vessels?q=%25' })).json()).toEqual([]); // '%' is literal, not a wildcard
+  });
+
+  it('returns a GeoJSON LineString track with times (raw tail)', async () => {
     const pts = [0, 1, 2, 3].map((i) => positionReport({ mmsi: 419100010, lat: 19 + i * 0.01, lon: 72.5 + i * 0.01, time: minsAgo(40 - i * 10) }));
     await ingest(...pts);
     const track = (await app.inject({ url: '/api/vessels/419100010/track?from=' + minsAgo(120).toISOString() })).json();
     expect(track.type).toBe('Feature');
     expect(track.geometry.type).toBe('LineString');
     expect(track.geometry.coordinates).toHaveLength(4);
-    expect(track.properties.resolution).toBe('raw');
     expect(track.properties.times).toHaveLength(4);
-    const longRange = (await app.inject({ url: '/api/vessels/419100010/track?from=' + minsAgo(60 * 24 * 3).toISOString() })).json();
-    expect(longRange.properties.resolution).toBe('1m');
-    expect(longRange.properties.points).toBe(4); // real-time aggregate covers unmaterialized data
+  });
+
+  it('packs closed hours into compact tracks losslessly and keeps serving them', async () => {
+    const mmsi = 419100020;
+    const times = [300, 290, 250, 200, 185].map(minsAgo); // spans several closed hours
+    await ingest(
+      ...times.map((t, i) => positionReport({ mmsi, lat: 20.123456 + i * 0.01, lon: 70.654321 + i * 0.01, sog: 12.3, cog: 45.6, heading: 44, time: t })),
+      positionReport({ mmsi, lat: 20.5, lon: 71, sog: 102.3, cog: 360, heading: 511, time: minsAgo(170) }), // "not available" values
+    );
+    const raw = (
+      await pool.query(
+        `SELECT ts, ST_Y(geom::geometry) lat, ST_X(geom::geometry) lon, sog, cog, heading FROM vessel_positions WHERE mmsi = $1 ORDER BY ts`,
+        [mmsi],
+      )
+    ).rows;
+    expect(raw).toHaveLength(6);
+
+    expect(await compactTracks()).toBeGreaterThanOrEqual(6);
+    expect(await compactTracks()).toBe(0); // each hour is packed exactly once
+    const wm = (await tracksWatermark())!;
+    expect(wm.getTime()).toBeGreaterThan(raw[5].ts.getTime());
+
+    const packed = (
+      await pool.query(`SELECT p.* FROM vessel_tracks t, track_points(t.pts, t.block_start) p WHERE t.mmsi = $1 ORDER BY p.ts`, [mmsi])
+    ).rows;
+    expect(packed).toHaveLength(6);
+    packed.forEach((p, i) => {
+      const r = raw[i];
+      expect(Math.abs(p.ts.getTime() - r.ts.getTime())).toBeLessThan(1000);
+      expect(p.lat).toBeCloseTo(r.lat, 6);
+      expect(p.lon).toBeCloseTo(r.lon, 6);
+      if (r.sog == null) expect(p.sog).toBeNull();
+      else expect(p.sog).toBeCloseTo(r.sog, 1);
+      if (r.cog == null) expect(p.cog).toBeNull();
+      else expect(p.cog).toBeCloseTo(r.cog, 1);
+      expect(p.heading).toBe(r.heading);
+    });
+
+    // A fresh raw point after the watermark: the API merges packed + raw without duplicates.
+    await ingest(positionReport({ mmsi, lat: 20.6, lon: 71.1, time: minsAgo(1) }));
+    const track = (await app.inject({ url: `/api/vessels/${mmsi}/track?from=${minsAgo(360).toISOString()}` })).json();
+    expect(track.properties.points).toBe(7);
+    expect(track.geometry.coordinates[0]).toEqual([70.654321, 20.123456]);
+
+    // Area query hits packed and raw data, and misses elsewhere.
+    const area = (await app.inject({ url: `/api/tracks/area?bbox=70.5,20,71.2,20.7&from=${minsAgo(360).toISOString()}` })).json();
+    expect(area.vessels.find((v: { mmsi: number }) => v.mmsi === mmsi)).toMatchObject({ points: 7 });
+    const elsewhere = (await app.inject({ url: `/api/tracks/area?bbox=-50,-50,-49,-49&from=${minsAgo(360).toISOString()}` })).json();
+    expect(elsewhere.vessels).toEqual([]);
+    expect((await app.inject({ url: '/api/tracks/area?bbox=170,0,-170,10' })).statusCode).toBe(400);
+  });
+
+  it('storage guard drops the oldest track day but never the last one', async () => {
+    await pool.query(
+      `INSERT INTO vessel_tracks (mmsi, block_start, n, min_lat, min_lon, max_lat, max_lon, pts)
+       VALUES (419100021, date_trunc('day', now(), 'UTC') - interval '1 day', 1, 1, 1, 1, 1, decode('00', 'hex'))`,
+    );
+    const past = `SELECT count(*)::int n FROM track_partitions() WHERE day < date_trunc('day', now(), 'UTC')`;
+    const before = (await pool.query(past)).rows[0].n;
+    expect(before).toBeGreaterThanOrEqual(1);
+    expect(await storageGuard(1)).toBe(before); // 1 MB limit: always "over"
+    expect((await pool.query(past)).rows[0].n).toBe(0);
+    expect((await pool.query(`SELECT count(*)::int n FROM vessel_tracks WHERE mmsi = 419100020`)).rows[0].n).toBeGreaterThan(0);
   });
 });
 
