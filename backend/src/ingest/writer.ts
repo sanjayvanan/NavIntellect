@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import { withTransaction } from '../db/pool.js';
 import { LEGACY_SHIP_COLUMNS } from '../db/legacy.js';
+import type { HistorySampler } from './sampler.js';
 import type { AisMsg, LegacyShip, PositionMsg, StaticMsg } from './types.js';
 
 export interface WriteResult {
@@ -14,10 +15,11 @@ export interface WriteResult {
 /**
  * Persists one batch in a single transaction:
  *   1. upsert vessels (identity + name hints + static data)
- *   2. bulk insert position history (daily partitions), deduped by (mmsi, ts)
+ *   2. bulk insert position history (daily partitions), deduped by (mmsi, ts),
+ *      thinned by the optional sampler (the live table always gets every position)
  *   3. upsert vessel_latest, only moving forward in time
  */
-export async function writeBatch(batch: AisMsg[]): Promise<WriteResult> {
+export async function writeBatch(batch: AisMsg[], sampler?: HistorySampler): Promise<WriteResult> {
   const positions: PositionMsg[] = [];
   const statics = new Map<number, StaticMsg>();
   for (const m of batch) {
@@ -32,9 +34,11 @@ export async function writeBatch(batch: AisMsg[]): Promise<WriteResult> {
     if (!cur || p.ts > cur.ts) latestByMmsi.set(p.mmsi, p);
   }
 
-  return withTransaction(async (client) => {
+  const history = sampler ? sampler.select(positions) : positions;
+
+  const result = await withTransaction(async (client) => {
     await upsertVessels(client, latestByMmsi, statics);
-    const positionsInserted = await insertPositions(client, positions);
+    const positionsInserted = await insertPositions(client, history);
     const updated = await upsertLatest(client, [...latestByMmsi.values()]);
     const advanced = new Set(updated.map((u) => u.mmsi));
     return {
@@ -43,6 +47,8 @@ export async function writeBatch(batch: AisMsg[]): Promise<WriteResult> {
       latest: [...latestByMmsi.values()].filter((p) => advanced.has(p.mmsi)),
     };
   });
+  sampler?.commit(history);
+  return result;
 }
 
 function mergeStatic(prev: StaticMsg | undefined, next: StaticMsg): StaticMsg {

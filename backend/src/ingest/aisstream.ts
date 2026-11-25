@@ -47,7 +47,7 @@ export class AisStreamClient {
 
   private connect(): void {
     const url = this.opts.url ?? 'wss://stream.aisstream.io/v0/stream';
-    const ws = new WebSocket(url, { perMessageDeflate: true, handshakeTimeout: 10_000 });
+    const ws = new WebSocket(url, { perMessageDeflate: true, handshakeTimeout: 60_000 });
     this.ws = ws;
 
     ws.on('open', () => {
@@ -95,7 +95,7 @@ export class AisStreamClient {
 
   private armWatchdog(): void {
     if (this.watchdog) clearInterval(this.watchdog);
-    const idle = this.opts.idleTimeoutMs ?? 60_000;
+    const idle = this.opts.idleTimeoutMs ?? 180_000;
     this.watchdog = setInterval(() => {
       if (this.ws && this.connected && Date.now() - this.lastMessageAt > idle) {
         logger.warn({ idleMs: Date.now() - this.lastMessageAt }, 'aisstream idle, forcing reconnect');

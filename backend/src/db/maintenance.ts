@@ -7,14 +7,14 @@ const LATE_DATA_MS = 5 * 60_000;
 
 /** Ensures daily partitions exist and drops expired ones / expired 1-minute tracks. */
 export async function partitionMaintenance(opts: { positionsRetentionDays: number; tracksRetentionDays: number }) {
-  const { rows } = await pool.query<{ created: number; dropped: number; tracks_deleted: number }>(
-    `SELECT ensure_position_partitions(2, 7) AS created,
-            drop_old_position_partitions($1) AS dropped,
-            (WITH d AS (DELETE FROM vessel_tracks_1m WHERE bucket < now() - make_interval(days => $2) RETURNING 1)
-             SELECT count(*)::int FROM d) AS tracks_deleted`,
-    [opts.positionsRetentionDays, opts.tracksRetentionDays],
+  const { rows } = await pool.query<{ created: number; dropped: number }>(
+    `SELECT ensure_position_partitions(2, 7) AS created, drop_old_position_partitions($1) AS dropped`,
+    [opts.positionsRetentionDays],
   );
-  const r = rows[0]!;
+  const del = await pool.query(`DELETE FROM vessel_tracks_1m WHERE bucket < now() - make_interval(days => $1)`, [
+    opts.tracksRetentionDays,
+  ]);
+  const r = { ...rows[0]!, tracks_deleted: del.rowCount ?? 0 };
   if (r.created || r.dropped || r.tracks_deleted) logger.info(r, 'partition maintenance');
 }
 

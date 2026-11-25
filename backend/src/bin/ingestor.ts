@@ -26,6 +26,7 @@ const { batcher, sweepGaps } = createPipeline({
   maxRows: config.FLUSH_MAX_ROWS,
   maxBuffer: config.MAX_BUFFER,
   alertCooldownMinutes: config.ALERT_COOLDOWN_MINUTES,
+  historySampleSeconds: config.POSITIONS_SAMPLE_SECONDS,
 });
 
 const stream = new AisStreamClient({

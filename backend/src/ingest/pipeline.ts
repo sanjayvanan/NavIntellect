@@ -3,6 +3,7 @@ import { evaluateZones, sweepAisGaps, type AlertRow } from '../alerts/engine.js'
 import { logger } from '../shared/logger.js';
 import { CHANNELS } from '../shared/redis.js';
 import { Batcher } from './batcher.js';
+import { HistorySampler } from './sampler.js';
 import type { AisMsg } from './types.js';
 import { writeBatch } from './writer.js';
 
@@ -12,6 +13,8 @@ export interface PipelineOptions {
   maxRows: number;
   maxBuffer: number;
   alertCooldownMinutes: number;
+  /** Store at most one history point per vessel per this many seconds (0 = keep all). */
+  historySampleSeconds?: number;
 }
 
 /** Batcher -> DB write -> Redis publish -> zone evaluation -> alert publish. */
@@ -22,12 +25,14 @@ export function createPipeline(opts: PipelineOptions) {
     logger.info({ count: alerts.length, types: alerts.map((a) => a.type) }, 'alerts raised');
   };
 
+  const sampler = new HistorySampler((opts.historySampleSeconds ?? 0) * 1000);
+
   const batcher = new Batcher({
     flushIntervalMs: opts.flushIntervalMs,
     maxRows: opts.maxRows,
     maxBuffer: opts.maxBuffer,
     onFlush: async (batch: AisMsg[]) => {
-      const res = await writeBatch(batch);
+      const res = await writeBatch(batch, sampler);
       if (res.updated.length) await opts.redis.publish(CHANNELS.vessels, JSON.stringify(res.updated));
       try {
         await publishAlerts(await evaluateZones(res.latest, opts.alertCooldownMinutes));

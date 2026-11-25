@@ -16,9 +16,9 @@ const schema = z.object({
   LOG_LEVEL: z.string().default('info'),
 
   AISSTREAM_API_KEY: z.string().default(''),
+  // [[lat, lon], [lat, lon]] corners; default is the whole world.
   AIS_BBOXES: bboxes.default([
-    [[5.0, 65.0], [25.5, 78.0]],
-    [[5.0, 78.0], [23.0, 95.0]],
+    [[-90, -180], [90, 180]],
   ]),
 
   // Supabase: use the *Session pooler* URI (IPv4, supports session state). Not the transaction pooler (:6543).
@@ -27,8 +27,10 @@ const schema = z.object({
   DATABASE_SSL_CA: z.string().optional(),
   DATABASE_POOL_MAX: z.coerce.number().int().positive().default(5),
   DB_SCHEMA: z.string().default('ais'),
-  POSITIONS_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
-  TRACKS_RETENTION_DAYS: z.coerce.number().int().positive().default(365),
+  POSITIONS_RETENTION_DAYS: z.coerce.number().int().positive().default(3),
+  TRACKS_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+  /** History sampling: at most one stored point per vessel per N seconds (0 = keep every message). */
+  POSITIONS_SAMPLE_SECONDS: z.coerce.number().int().min(0).default(120),
   REDIS_URL: z.string().default('redis://localhost:6379'),
 
   PORT: z.coerce.number().int().default(3000),
