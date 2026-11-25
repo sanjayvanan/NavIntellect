@@ -36,7 +36,7 @@ services:
     command: ["node", "dist/bin/migrate.js"]
     env_file: .env
     environment:
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379} # set to the Upstash rediss:// URL in production
 
   ingestor:
     profiles: ["app"]
@@ -44,7 +44,7 @@ services:
     command: ["node", "dist/bin/ingestor.js"]
     env_file: .env
     environment:
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379} # set to the Upstash rediss:// URL in production
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
@@ -56,7 +56,7 @@ services:
     command: ["node", "dist/bin/api.js"]
     env_file: .env
     environment:
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379} # set to the Upstash rediss:// URL in production
     ports: ["3000:3000"]
     depends_on:
       migrate: { condition: service_completed_successfully }

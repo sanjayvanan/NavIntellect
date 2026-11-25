@@ -6,14 +6,16 @@ import { pool } from '../src/db/pool.js';
 
 const host = (() => { try { return new URL(config.DATABASE_URL).host; } catch { return '(invalid DATABASE_URL)'; } })();
 
+// Never print the password (Upstash URLs carry it).
+const redisLabel = config.REDIS_URL.replace(/\/\/([^:@/]*):[^@]*@/, '//$1:***@');
 const redis = new Redis(config.REDIS_URL, { lazyConnect: true, maxRetriesPerRequest: 0, retryStrategy: () => null });
 redis.on('error', () => {});
 try {
   await redis.connect();
   await redis.ping();
-  console.log(`✔ redis ${config.REDIS_URL}`);
+  console.log(`✔ redis ${redisLabel}`);
 } catch {
-  console.error(`✖ Redis is not reachable at ${config.REDIS_URL}\n  Start it with: brew services start redis   (or: redis-server --daemonize yes)`);
+  console.error(`✖ Redis is not reachable at ${redisLabel}\n  Start it with: brew services start redis   (or: redis-server --daemonize yes)`);
   process.exit(1);
 } finally {
   redis.disconnect();

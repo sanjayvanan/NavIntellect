@@ -2,7 +2,8 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useSelector, useDispatch } from 'react-redux'
-import { toggleClustering, toggleSidebar } from '../store/themeSlice'
+import { setBaseLayer, toggleClustering, toggleOverlay, toggleSidebar } from '../store/themeSlice'
+import { initials, displayName } from '../utils/user'
 import {
   BellIcon,
   ChartIcon,
@@ -20,6 +21,8 @@ import { useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { baseLayers, overlayLayers } from '../config/mapLayers'
 import SettingsPanel from './SettingsPanel'
+import AccountPanel from './AccountPanel'
+import BrandMark from './BrandMark'
 import './Sidebar.css'
 
 const sidebarButtons = [
@@ -40,22 +43,40 @@ function Sidebar({ rail, fullscreen }) {
   const dispatch = useDispatch()
   const theme = useSelector((state) => state.theme.mode)
   const clustering = useSelector((state) => state.theme.clustering)
+  const activeLayer = useSelector((state) => state.theme.baseLayer)
+  const activeOverlays = useSelector((state) => state.theme.overlays)
+  const user = useSelector((state) => state.auth.user)
   const [showLayerControl, setShowLayerControl] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [activeLayer, setActiveLayer] = useState(baseLayers[0].name)
-  const [activeOverlays, setActiveOverlays] = useState({})
+  const [showAccount, setShowAccount] = useState(false)
   const [buttonPosition, setButtonPosition] = useState({ top: 0 })
   const map = useMap()
 
-  // Initialize first base layer on mount
+  // Base map: one tile layer, swapped when the (saved) choice changes. Restored on sign-in.
   useEffect(() => {
-    handleLayerChange(baseLayers[0])
-  }, [])
+    const layer = baseLayers.find((l) => l.name === activeLayer) ?? baseLayers[0]
+    const tiles = L.tileLayer(layer.url, { attribution: layer.attribution, maxZoom: layer.maxZoom, noWrap: false, zIndex: 1 })
+    tiles.addTo(map)
+    return () => {
+      map.removeLayer(tiles)
+    }
+  }, [map, activeLayer])
+
+  // Overlays drawn above the base map, one tile layer each.
+  const overlayKey = activeOverlays.join('|')
+  useEffect(() => {
+    const tiles = overlayLayers
+      .filter((o) => activeOverlays.includes(o.name))
+      .map(({ url, attribution, maxZoom, opacity, zIndex }) => L.tileLayer(url, { attribution, maxZoom, opacity, zIndex }).addTo(map))
+    return () => tiles.forEach((t) => map.removeLayer(t))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by overlayKey
+  }, [map, overlayKey])
 
   const handleSidebarClick = (buttonId, event) => {
     const rect = event.currentTarget.getBoundingClientRect()
     // Align the panel with its button, but keep at least ~320px of it on screen.
     const top = Math.max(12, Math.min(rect.top - 6, window.innerHeight - 332))
+    setShowAccount(false)
     if (buttonId === 'mapType') {
       setButtonPosition({ top })
       setShowLayerControl(!showLayerControl)
@@ -67,73 +88,14 @@ function Sidebar({ rail, fullscreen }) {
     }
   }
 
-  const handleLayerChange = (layer) => {
-    // Remove only base layers, keeping overlays
-    map.eachLayer((mapLayer) => {
-      if (mapLayer.options.attribution && !activeOverlays[mapLayer._url]) {
-        map.removeLayer(mapLayer)
-      }
-    })
-
-    // Add the selected base layer
-    const { url, attribution, maxZoom } = layer
-    L.tileLayer(url, {
-      attribution,
-      maxZoom,
-      noWrap: false
-    }).addTo(map)
-
-    // Re-add all active overlays to ensure proper layer order
-    Object.entries(activeOverlays).forEach(([name, isActive]) => {
-      if (isActive) {
-        const overlay = overlayLayers.find(ol => ol.name === name)
-        if (overlay) {
-          const { url, attribution, maxZoom, opacity, zIndex } = overlay
-          L.tileLayer(url, {
-            attribution,
-            maxZoom,
-            opacity,
-            zIndex
-          }).addTo(map)
-        }
-      }
-    })
-
-    setActiveLayer(layer.name)
-  }
-
-  const handleOverlayToggle = (overlay) => {
-    setActiveOverlays(prev => {
-      const newOverlays = { ...prev }
-      
-      if (newOverlays[overlay.name]) {
-        // Remove overlay
-        map.eachLayer((layer) => {
-          if (layer._url === overlay.url) {
-            map.removeLayer(layer)
-          }
-        })
-        delete newOverlays[overlay.name]
-      } else {
-        // Add overlay
-        const { url, attribution, maxZoom, opacity, zIndex } = overlay
-        L.tileLayer(url, {
-          attribution,
-          maxZoom,
-          opacity,
-          zIndex
-        }).addTo(map)
-        newOverlays[overlay.name] = true
-      }
-      
-      return newOverlays
-    })
-  }
+  const handleLayerChange = (layer) => dispatch(setBaseLayer(layer.name))
+  const handleOverlayToggle = (overlay) => dispatch(toggleOverlay(overlay.name))
 
   if (!rail) return null
   const closePanels = () => {
     setShowLayerControl(false)
     setShowSettings(false)
+    setShowAccount(false)
   }
   const panelStyle = { top: buttonPosition.top, maxHeight: `calc(100vh - ${buttonPosition.top + 12}px)` }
   const isActive = (id) => (id === 'mapType' && showLayerControl) || (id === 'settings' && showSettings)
@@ -141,6 +103,7 @@ function Sidebar({ rail, fullscreen }) {
   return createPortal(
     <>
       <nav className={`sidebar ${theme}`} aria-label="Map tools">
+        <BrandMark theme={theme} />
         {/* Same icon and position as the floating "show sidebar" button, so the toggle never moves. */}
         <button
           className="sidebar-button sidebar-toggle"
@@ -193,8 +156,24 @@ function Sidebar({ rail, fullscreen }) {
               {fullscreen.isFullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}
             </button>
           )}
+          <div className="sidebar-divider" />
+          <button
+            className={`sidebar-avatar ${showAccount ? 'active' : ''}`}
+            onClick={() => {
+              setShowLayerControl(false)
+              setShowSettings(false)
+              setShowAccount(!showAccount)
+            }}
+            data-label={displayName(user)}
+            aria-label="Account"
+            aria-expanded={showAccount}
+          >
+            {initials(user)}
+          </button>
         </div>
       </nav>
+
+      {showAccount && <AccountPanel user={user} theme={theme} onClose={closePanels} />}
 
       {showSettings && <SettingsPanel style={panelStyle} onClose={closePanels} />}
 
@@ -227,7 +206,7 @@ function Sidebar({ rail, fullscreen }) {
               <label key={overlay.name} className="layer-option">
                 <input
                   type="checkbox"
-                  checked={!!activeOverlays[overlay.name]}
+                  checked={activeOverlays.includes(overlay.name)}
                   onChange={() => handleOverlayToggle(overlay)}
                 />
                 <span>{overlay.name}</span>

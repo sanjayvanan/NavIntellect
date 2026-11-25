@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="304" viewBox="66 56 960 304">
+  <defs>
+    <linearGradient id="sea" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16C5D8"/>
+      <stop offset="1" stop-color="#087CA6"/>
+    </linearGradient>
+    <linearGradient id="navy" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#163B63"/>
+      <stop offset="1" stop-color="#071B35"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Emblem: coastal horizon + radar sweep -->
+  <g transform="translate(58 48)">
+    <circle cx="160" cy="160" r="142" fill="none" stroke="#D7E8F0" stroke-width="3"/>
+    <path d="M42 184 A118 118 0 0 1 278 184" fill="none" stroke="#9CBBCB" stroke-width="4"/>
+    <path d="M160 184 L160 63" stroke="#173D60" stroke-width="8" stroke-linecap="round"/>
+    <path d="M160 184 L245 105" stroke="url(#sea)" stroke-width="9" stroke-linecap="round"/>
+    <path d="M160 184 L245 105 A118 118 0 0 0 160 66 Z" fill="#16C5D8" opacity=".13"/>
+    <circle cx="245" cy="105" r="9" fill="#16C5D8"/>
+    <circle cx="160" cy="184" r="12" fill="#173D60"/>
+    <path d="M48 205 C80 188 108 188 140 205 S200 222 232 205 S270 194 278 200"
+          fill="none" stroke="url(#sea)" stroke-width="10" stroke-linecap="round"/>
+    <path d="M63 232 C95 215 123 215 155 232 S215 249 247 232"
+          fill="none" stroke="#173D60" stroke-width="8" stroke-linecap="round"/>
+    <!-- abstract coastline -->
+    <path d="M88 143 C104 126 113 113 125 96 C137 80 149 73 160 67"
+          fill="none" stroke="#173D60" stroke-width="8" stroke-linecap="round"/>
+    <path d="M88 143 L103 150 L117 141 L130 148 L143 136"
+          fill="none" stroke="#16AFC6" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <g transform="translate(390 132)">
+    <text x="0" y="92" font-family="Arial, Helvetica, sans-serif" font-size="88"
+          font-weight="700" letter-spacing="-2" fill="url(#navy)">Nav<tspan fill="#079DB8">Intellect</tspan></text>
+    <path d="M2 119 H625" stroke="#D4E4EC" stroke-width="3"/>
+    <text x="4" y="165" font-family="Arial, Helvetica, sans-serif" font-size="27"
+          font-weight="600" letter-spacing="5" fill="#547187">COASTAL SURVEILLANCE SYSTEM</text>
+  </g>
+</svg>

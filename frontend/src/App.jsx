@@ -2,12 +2,29 @@ import { useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import MapComponent from './components/MapComponent'
 import Sidebar from './components/Sidebar'
+import AuthScreen from './components/AuthScreen'
+import BrandMark from './components/BrandMark'
 import { ExitFullscreenIcon, FullscreenIcon, MenuIcon } from './components/Icons'
 import { useFullscreen } from './hooks/useFullscreen'
 import { toggleSidebar } from './store/themeSlice'
+import emblem from './assets/navintellect-emblem.svg'
 import './App.css'
+import './components/AuthScreen.css'
 
-function App() {
+function Splash() {
+  return (
+    <div className="auth-splash" role="status">
+      <div>
+        <div className="auth-splash-badge">
+          <img src={emblem} alt="" />
+        </div>
+        <p>Restoring your workspace</p>
+      </div>
+    </div>
+  )
+}
+
+function Workspace() {
   const dispatch = useDispatch()
   const theme = useSelector((state) => state.theme.mode)
   const collapsed = useSelector((state) => state.theme.sidebarCollapsed)
@@ -19,9 +36,10 @@ function App() {
     <div className={`app ${theme} ${collapsed ? 'sidebar-collapsed' : ''}`}>
       <aside ref={setRail} className={`sidebar-rail ${theme}`} aria-hidden={collapsed} />
 
-      {/* Collapsed: the rail shrinks to this small floating group over the map. */}
+      {/* Collapsed: the rail shrinks to this small floating group over the map, at the same spots. */}
       {collapsed && (
         <div className={`floating-controls ${theme}`}>
+          <BrandMark theme={theme} />
           <button className="chrome-button" onClick={() => dispatch(toggleSidebar())} title="Show sidebar">
             <MenuIcon />
           </button>
@@ -44,6 +62,13 @@ function App() {
       </main>
     </div>
   )
+}
+
+function App() {
+  const status = useSelector((state) => state.auth.status)
+  if (status === 'checking') return <Splash />
+  if (status !== 'signedIn') return <AuthScreen />
+  return <Workspace />
 }
 
 export default App

@@ -11,6 +11,7 @@ import { attachUser } from './auth/guard.js';
 import { errorHandler } from './errors.js';
 import { alertRoutes } from './routes/alerts.js';
 import { authRoutes } from './routes/auth.js';
+import { preferenceRoutes } from './routes/preferences.js';
 import { healthRoutes } from './routes/health.js';
 import { shipRoutes } from './routes/ships.js';
 import { userRoutes } from './routes/users.js';
@@ -29,7 +30,7 @@ export async function buildServer(deps: { redis: Redis; subscriber: Redis }) {
   await app.register(helmet, { contentSecurityPolicy: false });
   await app.register(cors, {
     origin: config.CORS_ORIGIN.split(',').map((s) => s.trim()),
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
   await app.register(compress, { threshold: 1024 });
@@ -50,6 +51,7 @@ export async function buildServer(deps: { redis: Redis; subscriber: Redis }) {
   await app.register(alertRoutes);
   await app.register(authRoutes);
   await app.register(userRoutes);
+  await app.register(preferenceRoutes);
   await app.register(wsRoutes, { subscriber: deps.subscriber });
 
   return app;

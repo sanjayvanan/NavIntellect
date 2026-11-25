@@ -1,11 +1,11 @@
 {
-  "name": "Coastal Surveillance System",
-  "short_name": "Coastal Surveillance",
+  "name": "NavIntellect · Coastal Surveillance System",
+  "short_name": "NavIntellect",
   "icons": [
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
     { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
   ],
-  "theme_color": "#0b2545",
+  "theme_color": "#071b35",
   "background_color": "#ffffff",
   "display": "standalone"
 }

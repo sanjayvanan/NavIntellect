@@ -1,15 +1,17 @@
-import { MapContainer, TileLayer, LayerGroup } from 'react-leaflet'
+import { MapContainer, LayerGroup } from 'react-leaflet'
+import { useSelector } from 'react-redux'
 import ShipLayer from './ShipLayer'
 import ZoomControl from './ZoomControl'
 import MapAutoResize from './MapAutoResize'
-import { useState } from 'react'
+import MapViewPersistence from './MapViewPersistence'
 import 'leaflet/dist/leaflet.css'
 import BottomBar from './BottomBar'
 
 function MapComponent({ children }) {
-  const [theme, setTheme] = useState('dark')
-  const center = [20, 0]
-  const zoom = 3
+  // Opens where the user left off (read once: MapContainer ignores later center/zoom changes).
+  const savedView = useSelector((state) => state.theme.view)
+  const center = savedView ? [savedView.lat, savedView.lng] : [20, 0]
+  const zoom = savedView ? savedView.zoom : 3
 
   // Only define vertical bounds
   const MAX_BOUNDS = [
@@ -31,6 +33,7 @@ function MapComponent({ children }) {
       noWrap={false}    // Allow wrapping around the world
     >
       <MapAutoResize />
+      <MapViewPersistence />
       {children}
       
       {/* Ship Layer */}
@@ -38,7 +41,7 @@ function MapComponent({ children }) {
         <ShipLayer />
       </LayerGroup>
       
-      <ZoomControl theme={theme} />
+      <ZoomControl />
       <BottomBar />
     </MapContainer>
   )

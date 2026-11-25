@@ -237,6 +237,46 @@ describe('auth', () => {
   });
 });
 
+describe('registration and preferences', () => {
+  it('registers a viewer, rejects duplicates and ignores a requested role', async () => {
+    const res = await app.inject({
+      method: 'POST', url: '/api/auth/register',
+      payload: { email: 'new@test.local', password: 'new-user-password', name: 'New User', role: 'admin' },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().user).toMatchObject({ email: 'new@test.local', role: 'viewer', name: 'New User' });
+    expect(res.json().access_token).toBeTruthy();
+
+    const dup = await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email: 'NEW@test.local', password: 'another-password' } });
+    expect(dup.statusCode).toBe(409);
+    const short = await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email: 'x@test.local', password: 'short' } });
+    expect(short.statusCode).toBe(400);
+  });
+
+  it('stores, returns and clears per-user settings', async () => {
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'new@test.local', password: 'new-user-password' } });
+    const auth = { authorization: `Bearer ${login.json().access_token}` };
+    expect((await app.inject({ url: '/api/me/preferences' })).statusCode).toBe(401);
+    expect((await app.inject({ url: '/api/me/preferences', headers: auth })).json().settings).toEqual({});
+
+    const settings = { mode: 'dark', view: { lat: 18.9, lng: 72.8, zoom: 9 }, baseLayer: 'Satellite', overlays: ['Sea marks'], shipSize: 'large' };
+    const put = await app.inject({ method: 'PUT', url: '/api/me/preferences', headers: auth, payload: { settings } });
+    expect(put.statusCode).toBe(200);
+    expect((await app.inject({ url: '/api/me/preferences', headers: auth })).json().settings).toEqual(settings);
+
+    const fresh = await app.inject({ method: 'PUT', url: '/api/me/preferences', headers: auth, payload: { settings: { mode: 'dark', view: null } } });
+    expect(fresh.statusCode).toBe(200); // a new user who hasn't moved the map yet
+
+    const bad = await app.inject({ method: 'PUT', url: '/api/me/preferences', headers: auth, payload: { settings: { view: { lat: 200, lng: 0, zoom: 3 } } } });
+    expect(bad.statusCode).toBe(400);
+    const huge = await app.inject({ method: 'PUT', url: '/api/me/preferences', headers: auth, payload: { settings: { blob: 'x'.repeat(20_000) } } });
+    expect(huge.statusCode).toBe(413);
+
+    expect((await app.inject({ method: 'DELETE', url: '/api/me/preferences', headers: auth })).statusCode).toBe(204);
+    expect((await app.inject({ url: '/api/me/preferences', headers: auth })).json().settings).toEqual({});
+  });
+});
+
 describe('geofences and alerts', () => {
   let zoneId = '';
   // Box around Mumbai harbour approaches.

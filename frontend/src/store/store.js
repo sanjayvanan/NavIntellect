@@ -1,10 +1,13 @@
 import { configureStore } from '@reduxjs/toolkit'
 import themeReducer from './themeSlice'
 import shipReducer from './shipSlice'
+import authReducer from './authSlice'
+import { settingsSync } from './settingsSync'
 import { errorMiddleware } from '../middleware/errorMiddleware'
 
 export const store = configureStore({
   reducer: {
+    auth: authReducer,
     theme: themeReducer,
     ships: shipReducer,
   },
@@ -18,7 +21,7 @@ export const store = configureStore({
         // Ignore these paths in the state
         ignoredPaths: ['ships.shipHistory']
       }
-    }).concat(errorMiddleware),
+    }).prepend(settingsSync.middleware).concat(errorMiddleware),
   devTools: process.env.NODE_ENV !== 'production',
   devTools: {
     name: 'Ship Tracking App',
@@ -34,6 +37,7 @@ if (import.meta.hot) {
     newShipModule
   ]) => {
     store.replaceReducer({
+      auth: authReducer,
       theme: newThemeModule?.default,
       ships: newShipModule?.default
     })

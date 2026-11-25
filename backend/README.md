@@ -91,7 +91,7 @@ Repeats of the same alert are suppressed for `ALERT_COOLDOWN_MINUTES`.
 
 ## API
 
-Reads are open while `AUTH_REQUIRED_FOR_READS=false`, which is the default because the frontend has no login yet. Writes always need `Authorization: Bearer <access_token>`.
+The web app requires signing in, but the map's read endpoints stay open while `AUTH_REQUIRED_FOR_READS=false` (the default). Writes always need `Authorization: Bearer <access_token>`. Anyone can create an account from the sign-in page while `ALLOW_REGISTRATION=true` (the default). New accounts are always `viewer`; an admin raises roles through `/api/users`.
 
 | Method | Path | Notes |
 |---|---|---|
@@ -105,8 +105,10 @@ Reads are open while `AUTH_REQUIRED_FOR_READS=false`, which is the default becau
 | GET | `/api/alerts?status=open&type=&severity=&mmsi=&since=&before=&limit=` | Keyset pagination with `before` |
 | GET | `/api/alerts/summary` | Open alerts counted by type and severity |
 | POST | `/api/alerts/:id/ack` | Operator |
-| POST | `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout` | Login and refresh are rate-limited to 10/min |
-| GET | `/api/auth/me` | |
+| POST | `/api/auth/register` | `{email, password (≥10 chars), name?}` → same response as login, role `viewer`. 409 if the email is taken |
+| POST | `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout` | Register, login and refresh are rate-limited to 10/min |
+| GET | `/api/auth/me` | id, email, role, name |
+| GET/PUT/DELETE | `/api/me/preferences` | The signed-in user's settings: `{settings: {mode, view: {lat, lng, zoom}, baseLayer, overlays, …}}`. PUT replaces the document; max 16 KB; unknown keys are kept |
 | POST | `/api/auth/password` | |
 | GET/POST/PATCH | `/api/users`, GET `/api/audit` | Admin |
 | GET | `/api/health`, `/api/stats` | DB, Redis, ingest freshness, counts and storage size |

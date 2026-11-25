@@ -19,12 +19,19 @@
    never reach the map). */
 .floating-controls {
   position: absolute;
-  top: 14px; /* exactly where the rail's ☰ toggle sits (rail padding 14px, (64 - 42) / 2 = 11px) */
-  left: 11px;
+  /* Same spots as in the rail: logo at top 14px, ☰ at 68px, both centred in the 64px rail width. */
+  top: 14px;
+  left: 8px;
+  width: 48px;
   z-index: 1100;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 6px;
+}
+
+.floating-controls > .brand-mark {
+  margin-bottom: 0;
 }
 
 .chrome-button {
