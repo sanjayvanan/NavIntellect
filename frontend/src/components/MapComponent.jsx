@@ -1,6 +1,7 @@
 import { MapContainer, TileLayer, LayerGroup } from 'react-leaflet'
 import ShipLayer from './ShipLayer'
 import ZoomControl from './ZoomControl'
+import MapAutoResize from './MapAutoResize'
 import { useState } from 'react'
 import 'leaflet/dist/leaflet.css'
 import BottomBar from './BottomBar'
@@ -29,6 +30,7 @@ function MapComponent({ children }) {
       maxBoundsViscosity={1.0}
       noWrap={false}    // Allow wrapping around the world
     >
+      <MapAutoResize />
       {children}
       
       {/* Ship Layer */}

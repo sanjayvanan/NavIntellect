@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
 import { API_BASE_URL, upsertShips } from '../store/shipSlice'
+import { useIsolateFromMap } from '../hooks/useIsolateFromMap'
+import { CloseIcon, SearchIcon } from './Icons'
 import './SearchBox.css'
 
 const MIN_CHARS = 2
@@ -27,7 +29,7 @@ function SearchBox() {
   const [isVisible, setIsVisible] = useState(false)
   const [loading, setLoading] = useState(false)
   const [active, setActive] = useState(-1)
-  const searchRef = useRef(null)
+  const searchRef = useIsolateFromMap()
 
   // Debounced server search; an in-flight request is aborted when the user keeps typing.
   useEffect(() => {
@@ -103,35 +105,53 @@ function SearchBox() {
   const showEmpty = isVisible && !loading && q.length >= MIN_CHARS && results.length === 0
 
   return (
-    <div className="search-box-wrapper" ref={searchRef}>
+    <div className={`search-box-wrapper ${theme}`} ref={searchRef}>
       <div className="search-container">
-        <input
-          type="text"
-          value={searchTerm}
-          onChange={(e) => {
-            setSearchTerm(e.target.value)
-            setIsVisible(true)
-          }}
-          onFocus={() => setIsVisible(true)}
-          onKeyDown={handleKeyDown}
-          placeholder="Search ships worldwide: name, MMSI, IMO, callsign..."
-          className={`search-input ${theme}`}
-          autoComplete="off"
-        />
+        <div className="search-field">
+          <SearchIcon size={18} />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value)
+              setIsVisible(true)
+            }}
+            onFocus={() => setIsVisible(true)}
+            onKeyDown={handleKeyDown}
+            placeholder="Search ships: name, MMSI, IMO, callsign"
+            className="search-input"
+            autoComplete="off"
+            spellCheck={false}
+            aria-label="Search ships"
+          />
+          {loading && <span className="search-spinner" aria-hidden="true" />}
+          {searchTerm && !loading && (
+            <button
+              className="search-clear"
+              onClick={() => {
+                setSearchTerm('')
+                setResults([])
+              }}
+              aria-label="Clear search"
+            >
+              <CloseIcon size={16} />
+            </button>
+          )}
+        </div>
         {isVisible && (results.length > 0 || showEmpty) && (
-          <div className={`search-results ${theme}`}>
+          <div className="search-results">
             {results.map((ship, i) => {
               const located = hasPosition(ship)
               return (
                 <div
                   key={ship.uuid}
-                  className={`search-result-item ${theme} ${i === active ? 'active' : ''} ${located ? '' : 'disabled'}`}
+                  className={`search-result-item ${i === active ? 'active' : ''} ${located ? '' : 'disabled'}`}
                   onClick={() => handleSelect(ship)}
                   onMouseEnter={() => setActive(i)}
                   title={located ? 'Show on map' : 'No position received yet'}
                 >
-                  <div className={`ship-name ${theme}`}>{ship.track_name?.trim() || 'Unknown Ship'}</div>
-                  <div className={`ship-mmsi ${theme}`}>
+                  <div className="ship-name">{ship.track_name?.trim() || 'Unknown Ship'}</div>
+                  <div className="ship-mmsi">
                     {ship.type} · MMSI {ship.mmsi}
                     {ship.imo ? ` · IMO ${ship.imo}` : ''}
                     {' · '}
@@ -140,7 +160,7 @@ function SearchBox() {
                 </div>
               )
             })}
-            {showEmpty && <div className={`search-result-item ${theme} disabled`}>No ships found</div>}
+            {showEmpty && <div className="search-result-item disabled">No ships found</div>}
           </div>
         )}
       </div>

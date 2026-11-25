@@ -1,10 +1,13 @@
 import { useMap } from 'react-leaflet'
 import { useState, useEffect } from 'react'
 import { useSelector } from 'react-redux'
+import { useIsolateFromMap } from '../hooks/useIsolateFromMap'
+import { MinusIcon, PlusIcon } from './Icons'
 
 function ZoomControl() {
   const theme = useSelector((state) => state.theme.mode)
   const map = useMap()
+  const ref = useIsolateFromMap()
   const [zoomLevel, setZoomLevel] = useState(map.getZoom())
 
   useEffect(() => {
@@ -27,14 +30,15 @@ function ZoomControl() {
   }
 
   return (
-    <div className={`zoom-control-minimal ${theme}`}>
+    <div ref={ref} className={`zoom-control-minimal ${theme}`}>
       <button 
         onClick={handleZoomIn}
         className="zoom-btn"
         title="Zoom in"
+        aria-label="Zoom in"
         disabled={zoomLevel >= map.getMaxZoom()}
       >
-        +
+        <PlusIcon size={18} />
       </button>
       <div className="zoom-level-minimal">
         {zoomLevel.toFixed(0)}
@@ -43,9 +47,10 @@ function ZoomControl() {
         onClick={handleZoomOut}
         className="zoom-btn"
         title="Zoom out"
+        aria-label="Zoom out"
         disabled={zoomLevel <= map.getMinZoom()}
       >
-        -
+        <MinusIcon size={18} />
       </button>
     </div>
   )

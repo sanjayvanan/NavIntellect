@@ -14,10 +14,12 @@ const query = z.object({
   limit: z.coerce.number().int().min(1).max(20000).optional(),
   /**
    * Map zoom level for level-of-detail: below FULL_DETAIL_ZOOM only one representative ship per
-   * grid cell (~32 px on screen) is returned, so a world view shows a few hundred well-spread
+   * grid cell (size set by `density`) is returned, so a world view shows a few hundred well-spread
    * ships instead of 50k. Omitted = no thinning.
    */
   zoom: z.coerce.number().min(0).max(24).optional(),
+  /** Level-of-detail density: grid cells per 256 px tile side (default 16 = one ship per ~16 px). */
+  density: z.coerce.number().int().min(2).max(128).optional(),
 });
 
 /** Legacy contract used by the existing frontend (src/store/shipSlice.js). Flat array, no envelope. */
@@ -37,7 +39,7 @@ export async function shipRoutes(app: FastifyInstance, opts: { cache?: ShipCache
     let pick: string;
     if (q.zoom !== undefined && q.zoom < FULL_DETAIL_ZOOM) {
       // One ship per grid cell: prefer recently heard, then moving, then newest.
-      params.push(cellDegrees(q.zoom));
+      params.push(cellDegrees(q.zoom, q.density));
       const c = `$${params.length}::float8`;
       pick = `SELECT * FROM (
                 SELECT DISTINCT ON (floor(l.lon / ${c}), floor(l.lat / ${c})) l.mmsi, l.ts

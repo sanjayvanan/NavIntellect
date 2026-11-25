@@ -8,6 +8,7 @@ import { connectLiveSocket } from '../services/liveSocket'
 import { boundsToBbox } from '../utils/mapBbox'
 import { ShipCanvasLayer } from '../map/ShipCanvasLayer'
 import SearchBox from './SearchBox'
+import { DENSITY_LEVELS } from '../config/shipDensity'
 
 const decimalToDMS = (decimal, isLatitude) => {
   const direction = isLatitude ? (decimal >= 0 ? 'N' : 'S') : decimal >= 0 ? 'E' : 'W'
@@ -102,9 +103,9 @@ const renderShipPopup = (ship, theme) => {
 
 /**
  * Ships on the map. Performance model:
- * - Level of detail: zoomed out, the server returns one representative ship per ~32 px cell;
- *   from FULL_DETAIL_ZOOM on, every ship in view. "Declutter" (the toolbar toggle) can be turned
- *   off to always get every ship in view (newest MAP_SHIP_LIMIT).
+ * - Level of detail: zoomed out, the server returns one representative ship per grid cell;
+ *   from FULL_DETAIL_ZOOM on, every ship in view. The cell size is the "Ship density" setting
+ *   in the sidebar (levels in config/shipDensity.js), up to "All ships" (no thinning).
  * - Rendering: one canvas for all ships (no DOM marker per ship).
  * - Data: refetched for the viewport after every pan/zoom (debounced), live WebSocket updates
  *   limited to the viewport.
@@ -114,7 +115,8 @@ function ShipLayer() {
   const { data: ships, status, error } = useSelector((state) => state.ships)
   const selectedShip = useSelector((state) => state.ships.selectedShip)
   const theme = useSelector((state) => state.theme.mode)
-  const declutter = useSelector((state) => state.theme.clustering)
+  const { shipDensity: densityLevel, clustering, shipSize, showLabels, liveUpdates } = useSelector((state) => state.theme)
+  const density = DENSITY_LEVELS[densityLevel]?.density ?? null // null = all ships
   const map = useMap()
   const layerRef = useRef(null)
   const selectedRef = useRef(selectedShip)
@@ -144,6 +146,7 @@ function ShipLayer() {
     })
     layer.addTo(map)
     layerRef.current = layer
+    layer.setDisplay(displayRef.current)
     const clear = () => dispatch(setSelectedShip(null))
     map.on('contextmenu', clear)
     return () => {
@@ -152,6 +155,13 @@ function ShipLayer() {
       layerRef.current = null
     }
   }, [map, dispatch])
+
+  // Display settings from the Settings panel / toolbar.
+  const displayRef = useRef(null)
+  displayRef.current = { clustering, size: shipSize, labels: showLabels, dark: theme === 'dark' }
+  useEffect(() => {
+    layerRef.current?.setDisplay({ clustering, size: shipSize, labels: showLabels, dark: theme === 'dark' })
+  }, [clustering, shipSize, showLabels, theme])
 
   // Live copy of the selected ship (positions keep updating while its popup is open).
   const liveSelected = selectedShip ? ships.find((s) => s.mmsi === selectedShip.mmsi) || selectedShip : null
@@ -165,10 +175,11 @@ function ShipLayer() {
   useEffect(() => {
     const view = () => ({
       bbox: boundsToBbox(map.getBounds()),
-      // Declutter off -> ask for full detail at any zoom.
-      zoom: declutter ? map.getZoom() : FULL_DETAIL_ZOOM,
+      // "All ships" -> ask for full detail at any zoom.
+      zoom: density != null ? map.getZoom() : FULL_DETAIL_ZOOM,
+      density,
     })
-    const fullDetail = () => !declutter || map.getZoom() >= FULL_DETAIL_ZOOM
+    const fullDetail = () => density == null || map.getZoom() >= FULL_DETAIL_ZOOM
     const fetchData = () => {
       dispatch(fetchShips(view()))
         .unwrap()
@@ -176,11 +187,14 @@ function ShipLayer() {
           if (err !== 'Aborted') console.error('Failed to fetch ships:', err)
         })
     }
-    const socket = connectLiveSocket({
-      bbox: view().bbox,
-      // Zoomed out, only refresh the representative ships already shown.
-      onVessels: (updates) => dispatch(upsertShips({ ships: updates, addNew: fullDetail() })),
-    })
+    // Live updates can be switched off in Settings (then only the 60 s refresh runs).
+    const socket = liveUpdates
+      ? connectLiveSocket({
+          bbox: view().bbox,
+          // Zoomed out, only refresh the representative ships already shown.
+          onVessels: (updates) => dispatch(upsertShips({ ships: updates, addNew: fullDetail() })),
+        })
+      : { setBbox() {}, close() {} }
 
     let debounce = null
     const onMoveEnd = () => {
@@ -200,7 +214,7 @@ function ShipLayer() {
       map.off('moveend', onMoveEnd)
       socket.close()
     }
-  }, [dispatch, map, declutter])
+  }, [dispatch, map, density, liveUpdates])
 
   // Popup for the selected ship, managed directly with Leaflet: opened once per selection and
   // moved with setLatLng on live updates (re-opening it every second would flicker). Its content
@@ -251,7 +265,7 @@ function ShipLayer() {
           <div className="error-message">
             <h3>Error Loading Ships</h3>
             <p>{error}</p>
-            <button onClick={() => dispatch(fetchShips({ bbox: boundsToBbox(map.getBounds()), zoom: map.getZoom() }))}>
+            <button onClick={() => dispatch(fetchShips({ bbox: boundsToBbox(map.getBounds()), zoom: map.getZoom(), density }))}>
               Try Again
             </button>
           </div>

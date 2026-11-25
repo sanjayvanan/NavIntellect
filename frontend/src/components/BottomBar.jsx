@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useMap } from 'react-leaflet';
+import { useSelector } from 'react-redux';
+import { useIsolateFromMap } from '../hooks/useIsolateFromMap';
 import './BottomBar.css';
 
 function BottomBar() {
@@ -9,6 +11,8 @@ function BottomBar() {
     local: '',
   });
   const map = useMap();
+  const theme = useSelector((state) => state.theme.mode);
+  const ref = useIsolateFromMap();
 
   // Update time every second
   useEffect(() => {
@@ -52,13 +56,15 @@ function BottomBar() {
   }, [map]);
 
   return (
-    <div className="bottom-bar">
+    <div ref={ref} className={`bottom-bar ${theme}`}>
       <div className="bottom-bar-section">
         <span className="time-display ist">{currentTime.ist}</span>
       </div>
-      <div className="bottom-bar-section coordinates">
-        <span>Lat: {mouseCoords.lat}° Lon: {mouseCoords.lng}°</span>
-
+      <div className="bottom-bar-section bb-coords">
+        <span className="label">Lat</span>
+        <span>{mouseCoords.lat}°</span>
+        <span className="label">Lon</span>
+        <span>{mouseCoords.lng}°</span>
       </div>
     </div>
   );

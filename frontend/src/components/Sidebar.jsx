@@ -1,27 +1,47 @@
+/* eslint-disable react/prop-types -- internal component; the project does not use PropTypes */
 import { useState, useEffect } from 'react'
-import { useSelector } from 'react-redux'
+import { createPortal } from 'react-dom'
+import { useSelector, useDispatch } from 'react-redux'
+import { toggleClustering, toggleSidebar } from '../store/themeSlice'
+import {
+  BellIcon,
+  ChartIcon,
+  CloseIcon,
+  ClusterIcon,
+  ExitFullscreenIcon,
+  FullscreenIcon,
+  LayersIcon,
+  MenuIcon,
+  RouteIcon,
+  SettingsIcon,
+  ShapesIcon,
+} from './Icons'
 import { useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { baseLayers, overlayLayers } from '../config/mapLayers'
+import SettingsPanel from './SettingsPanel'
 import './Sidebar.css'
 
 const sidebarButtons = [
-  { 
-    id: 'mapType', 
-    icon: '🗺️', 
-    label: 'Map Type',
-    panel: 'layerControl' 
-  },
-  { id: 'objects', icon: '📍', label: 'Graphical Objects' },
-  { id: 'settings', icon: '⚙️', label: 'Settings' },
-  { id: 'routes', icon: '🛣️', label: 'Routes' },
-  { id: 'notifications', icon: '🔔', label: 'Notifications' },
-  { id: 'trackInfo', icon: '📊', label: 'Track Info' }
+  { id: 'mapType', Icon: LayersIcon, label: 'Map layers' },
+  { id: 'objects', Icon: ShapesIcon, label: 'Graphical objects' },
+  { id: 'settings', Icon: SettingsIcon, label: 'Settings' },
+  { id: 'routes', Icon: RouteIcon, label: 'Routes' },
+  { id: 'notifications', Icon: BellIcon, label: 'Notifications' },
+  { id: 'trackInfo', Icon: ChartIcon, label: 'Track info' },
 ]
 
-function Sidebar() {
+/**
+ * Left rail. It is a React child of the map (it needs useMap for base layers) but its DOM is
+ * portalled into `rail`, an element beside the map, so clicks on it can never reach the map
+ * or the ships drawn underneath.
+ */
+function Sidebar({ rail, fullscreen }) {
+  const dispatch = useDispatch()
   const theme = useSelector((state) => state.theme.mode)
+  const clustering = useSelector((state) => state.theme.clustering)
   const [showLayerControl, setShowLayerControl] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [activeLayer, setActiveLayer] = useState(baseLayers[0].name)
   const [activeOverlays, setActiveOverlays] = useState({})
   const [buttonPosition, setButtonPosition] = useState({ top: 0 })
@@ -33,11 +53,17 @@ function Sidebar() {
   }, [])
 
   const handleSidebarClick = (buttonId, event) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    // Align the panel with its button, but keep at least ~320px of it on screen.
+    const top = Math.max(12, Math.min(rect.top - 6, window.innerHeight - 332))
     if (buttonId === 'mapType') {
-      const button = event.currentTarget
-      const rect = button.getBoundingClientRect()
-      setButtonPosition({ top: rect.top })
+      setButtonPosition({ top })
       setShowLayerControl(!showLayerControl)
+      setShowSettings(false)
+    } else if (buttonId === 'settings') {
+      setButtonPosition({ top })
+      setShowSettings(!showSettings)
+      setShowLayerControl(false)
     }
   }
 
@@ -104,28 +130,84 @@ function Sidebar() {
     })
   }
 
-  return (
+  if (!rail) return null
+  const closePanels = () => {
+    setShowLayerControl(false)
+    setShowSettings(false)
+  }
+  const panelStyle = { top: buttonPosition.top, maxHeight: `calc(100vh - ${buttonPosition.top + 12}px)` }
+  const isActive = (id) => (id === 'mapType' && showLayerControl) || (id === 'settings' && showSettings)
+
+  return createPortal(
     <>
-      <div className={`sidebar ${theme}`}>
-        {sidebarButtons.map((button) => (
+      <nav className={`sidebar ${theme}`} aria-label="Map tools">
+        {/* Same icon and position as the floating "show sidebar" button, so the toggle never moves. */}
+        <button
+          className="sidebar-button sidebar-toggle"
+          onClick={() => {
+            closePanels()
+            dispatch(toggleSidebar())
+          }}
+          data-label="Hide sidebar"
+          aria-label="Hide sidebar"
+        >
+          <MenuIcon />
+        </button>
+        <div className="sidebar-divider" />
+
+        <div className="sidebar-group">
+          {sidebarButtons.map(({ id, Icon, label }) => (
+            <button
+              key={id}
+              className={`sidebar-button ${isActive(id) ? 'active' : ''}`}
+              onClick={(e) => handleSidebarClick(id, e)}
+              data-label={label}
+              aria-label={label}
+              aria-pressed={isActive(id)}
+            >
+              <Icon />
+            </button>
+          ))}
+        </div>
+
+        <div className="sidebar-spacer" />
+
+        <div className="sidebar-group">
           <button
-            key={button.id}
-            className={`sidebar-button ${theme} ${showLayerControl && button.id === 'mapType' ? 'active' : ''}`}
-            onClick={(e) => handleSidebarClick(button.id, e)}
-            title={button.label}
+            className={`sidebar-button ${clustering ? 'on' : ''}`}
+            onClick={() => dispatch(toggleClustering())}
+            data-label={clustering ? 'Clustering: on' : 'Clustering: off'}
+            aria-label="Cluster ships"
+            aria-pressed={clustering}
           >
-            <span className="button-icon">{button.icon}</span>
+            <ClusterIcon />
           </button>
-        ))}
-      </div>
+          {fullscreen?.supported && (
+            <button
+              className={`sidebar-button ${fullscreen.isFullscreen ? 'on' : ''}`}
+              onClick={fullscreen.toggle}
+              data-label={fullscreen.isFullscreen ? 'Exit full screen' : 'Full screen'}
+              aria-label="Full screen"
+              aria-pressed={fullscreen.isFullscreen}
+            >
+              {fullscreen.isFullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}
+            </button>
+          )}
+        </div>
+      </nav>
+
+      {showSettings && <SettingsPanel style={panelStyle} onClose={closePanels} />}
 
       {showLayerControl && (
-        <div 
-          className={`layer-control-panel ${theme}`} 
-          style={{ top: buttonPosition.top }}
-        >
+        <div className={`layer-control-panel ${theme}`} style={panelStyle}>
+          <div className="panel-header">
+            <span>Map layers</span>
+            <button className="panel-close" onClick={closePanels} aria-label="Close">
+              <CloseIcon size={16} />
+            </button>
+          </div>
           <div className="base-layers">
-            <h4>Base Maps</h4>
+            <h4>Base map</h4>
             {baseLayers.map((layer) => (
               <label key={layer.name} className="layer-option">
                 <input
@@ -154,7 +236,8 @@ function Sidebar() {
           </div>
         </div>
       )}
-    </>
+    </>,
+    rail,
   )
 }
 

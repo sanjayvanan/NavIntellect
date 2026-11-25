@@ -1,105 +1,249 @@
+.sidebar-rail {
+  position: relative; /* panels are positioned against the rail and overflow onto the map */
+  flex: none;
+  width: 64px;
+  height: 100%;
+  z-index: 1100; /* above Leaflet panes and controls */
+}
+
+/* Collapsed: no rail, the map takes the full width. */
+.sidebar-collapsed .sidebar-rail {
+  display: none;
+}
+
 .sidebar {
-  position: fixed;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  --rail-bg: #ffffff;
+  --rail-border: #e4e8ee;
+  --rail-icon: #5b6470;
+  --rail-hover: #f1f4f8;
+  --rail-active-bg: rgba(30, 136, 229, 0.12);
+  --rail-active: #1e88e5;
+  --rail-tip-bg: #1f2329;
+  --rail-tip-text: #fff;
+
+  height: 100%;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 8px;
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 0 8px 8px 0;
-  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
-  z-index: 1000;
-  backdrop-filter: blur(8px);
-  transition: all 0.3s ease;
+  align-items: center;
+  padding: 14px 0 12px; /* toggle at top: 14px, left: 11px, same spot as .floating-controls */
+  background: var(--rail-bg);
+  border-right: 1px solid var(--rail-border);
+  box-shadow: 1px 0 6px rgba(15, 23, 42, 0.04);
 }
 
 .sidebar.dark {
-  background: rgba(51, 51, 51, 0.9);
+  --rail-bg: #1b1f24;
+  --rail-border: #2c323a;
+  --rail-icon: #a3acb8;
+  --rail-hover: #262b32;
+  --rail-active-bg: rgba(100, 181, 246, 0.16);
+  --rail-active: #64b5f6;
+  --rail-tip-bg: #eef1f5;
+  --rail-tip-text: #1b1f24;
 }
 
-.sidebar-button {
+.sidebar-brand {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 10px;
-  border: none;
-  background: transparent;
-  color: #666;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border-radius: 6px;
   width: 40px;
   height: 40px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #1e88e5, #1565c0);
+  color: #fff;
+  box-shadow: 0 4px 10px rgba(30, 136, 229, 0.35);
 }
 
-.sidebar-button.dark {
-  color: #fff;
+.sidebar-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.sidebar-spacer {
+  flex: 1;
+}
+
+.sidebar-button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--rail-icon);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .sidebar-button:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--rail-hover);
+  color: var(--rail-active);
 }
 
-.sidebar-button.dark:hover {
-  background: rgba(255, 255, 255, 0.1);
+.sidebar-button:focus-visible {
+  outline: 2px solid var(--rail-active);
+  outline-offset: 1px;
 }
 
+/* Open panel: tinted tile + accent bar on the rail edge */
 .sidebar-button.active {
-  background: #3498db;
-  color: white;
+  background: var(--rail-active-bg);
+  color: var(--rail-active);
 }
 
-.sidebar-button.dark.active {
-  background: #2980b9;
+.sidebar-button.active::before {
+  content: '';
+  position: absolute;
+  left: -11px;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--rail-active);
 }
 
-.button-icon {
-  font-size: 20px;
+/* Toggle that is on (clustering, full screen): coloured icon only */
+.sidebar-button.on {
+  color: var(--rail-active);
+}
+
+/* Hover label to the right of each button */
+.sidebar-button[data-label]::after {
+  content: attr(data-label);
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translate(-4px, -50%);
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: var(--rail-tip-bg);
+  color: var(--rail-tip-text);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  z-index: 2;
+}
+
+.sidebar-button:hover::after {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+
+/* No hover label while that button's panel is open */
+.sidebar-button.active::after {
+  display: none;
+}
+
+/* Panel header (title + close) */
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: -2px 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.panel-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--panel-muted);
+  cursor: pointer;
+}
+
+.panel-close:hover {
+  background: var(--panel-hover);
+  color: var(--panel-text);
 }
 
 .layer-control-panel {
+  /* Theme colours for both panels (Map Type, Settings) */
+  --panel-bg: #ffffff;
+  --panel-text: #1f2329;
+  --panel-muted: #5b6470;
+  --panel-border: #dfe3e8;
+  --panel-hover: rgba(30, 136, 229, 0.08);
+  --text-color: var(--panel-text);
+  --hover-color: var(--panel-hover);
+  --active-color: rgba(30, 136, 229, 0.16);
+
   position: absolute;
-  left: 60px;
-  border-radius: 4px;
-  padding: 15px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  background-color: #333;
+  left: 72px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: var(--panel-bg);
+  color: var(--panel-text);
+  border: 1px solid var(--panel-border);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
   z-index: 1000;
   min-width: 200px;
 }
 
+.layer-control-panel.dark {
+  --panel-bg: #23272e;
+  --panel-text: #eef1f5;
+  --panel-muted: #a3acb8;
+  --panel-border: #343a43;
+  --panel-hover: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
 .layer-control-panel h4 {
-  margin: 0 0 10px 0;
-  color: var(--text-color);
-  font-size: 14px;
+  margin: 0 0 8px 0;
+  color: var(--panel-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .base-layers,
 .overlay-layers {
-  margin-bottom: 15px;
+  margin-bottom: 12px;
+}
+
+.overlay-layers {
+  margin-bottom: 0;
 }
 
 .layer-option {
   display: flex;
   align-items: center;
-  padding: 6px 0;
-  color: var(--text-color);
+  padding: 6px 8px;
+  margin: 0 -8px;
+  border-radius: 6px;
+  color: var(--panel-text);
+  font-size: 13px;
   cursor: pointer;
 }
 
 .layer-option input {
   margin-right: 8px;
+  accent-color: #1e88e5;
 }
 
 .layer-option:hover {
-  background: var(--hover-color);
-}
-
-.layer-control-panel.dark {
-  background: #333;
-  color: white;
+  background: var(--panel-hover);
 }
 
 .layer-button {
@@ -125,21 +269,198 @@
 }
 
 @media (max-width: 768px) {
+  /* The rail becomes a bottom bar (see .app in App.css). */
+  .sidebar-rail {
+    width: 100%;
+    height: 58px;
+  }
+
   .sidebar {
-    bottom: 0;
-    top: auto;
-    left: 0;
-    right: 0;
-    transform: none;
     flex-direction: row;
-    justify-content: space-around;
-    border-radius: 8px 8px 0 0;
+    justify-content: space-between;
+    padding: 0 10px;
+    border-right: none;
+    border-top: 1px solid var(--rail-border);
+  }
+
+  .sidebar-brand {
+    display: none;
+  }
+
+  .sidebar-group {
+    flex-direction: row;
+  }
+
+  .sidebar-spacer {
+    flex: 0 0 8px;
+  }
+
+  .sidebar-button.active::before {
+    left: 9px;
+    right: 9px;
+    top: auto;
+    bottom: -8px;
+    width: auto;
+    height: 3px;
+    border-radius: 3px 3px 0 0;
+  }
+
+  .sidebar-button[data-label]::after {
+    display: none;
   }
 
   .layer-control-panel {
-    bottom: 70px;
+    bottom: 66px;
     left: 10px;
-    top: auto;
-    transform: none;
+    top: auto !important;
+    max-height: calc(100vh - 140px) !important;
   }
-} 
+}
+
+/* Settings panel */
+.settings-panel {
+  width: 280px;
+}
+
+.settings-section + .settings-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.setting-block {
+  margin-bottom: 12px;
+}
+
+.setting-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.setting-text small,
+.setting-note,
+.settings-footer {
+  font-size: 11.5px;
+  color: var(--panel-muted);
+}
+
+.setting-note {
+  display: block;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.density-slider {
+  width: 100%;
+  margin-top: 8px;
+  accent-color: #1e88e5;
+  cursor: pointer;
+}
+
+.density-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--panel-muted);
+}
+
+/* On/off switch */
+.setting-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  position: relative;
+}
+
+.setting-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.setting-toggle .switch {
+  flex: none;
+  width: 34px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--panel-border);
+  position: relative;
+  transition: background 0.2s ease;
+}
+
+.setting-toggle .switch::after {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s ease;
+}
+
+.setting-toggle input:checked + .switch {
+  background: #1e88e5;
+}
+
+.setting-toggle input:checked + .switch::after {
+  transform: translateX(14px);
+}
+
+.setting-toggle input:focus-visible + .switch {
+  outline: 2px solid #1e88e5;
+  outline-offset: 2px;
+}
+
+/* Segmented control (icon size) */
+.segmented {
+  display: flex;
+  margin-top: 6px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--panel-border);
+}
+
+.segmented button {
+  flex: 1;
+  padding: 5px 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.segmented button + button {
+  border-left: 1px solid var(--panel-border);
+}
+
+.segmented button.active {
+  background: #1e88e5;
+  color: #fff;
+}
+
+.settings-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.link-button {
+  border: none;
+  background: none;
+  color: #1e88e5;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+}

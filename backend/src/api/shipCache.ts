@@ -8,8 +8,10 @@ import type { BBox } from './errors.js';
 
 /** Below this zoom the map gets one representative ship per grid cell. */
 export const FULL_DETAIL_ZOOM = 10;
-/** Grid cell size in degrees: 256 px tiles / 8 cells per tile = one ship per ~32 px square. */
-export const cellDegrees = (zoom: number) => 360 / 2 ** (Math.floor(zoom) + 3);
+/** Default grid cells per 256 px map tile (16 -> one ship per ~16 px square). */
+export const DEFAULT_DENSITY = 16;
+/** Grid cell size in degrees for a zoom level and density (cells per 256 px tile side). */
+export const cellDegrees = (zoom: number, density = DEFAULT_DENSITY) => 360 / (2 ** Math.floor(zoom) * density);
 
 const RESYNC_MS = 5 * 60_000;
 const RECENT_MS = 30 * 60_000;
@@ -19,6 +21,8 @@ export interface MapQuery {
   hours: number;
   bbox?: BBox;
   zoom?: number;
+  /** Cells per 256 px tile side: higher = more ships when zoomed out. */
+  density?: number;
   limit?: number;
 }
 
@@ -110,7 +114,7 @@ export class ShipCache {
       out.push(s);
     }
     if (q.zoom !== undefined && q.zoom < FULL_DETAIL_ZOOM) {
-      const c = cellDegrees(q.zoom);
+      const c = cellDegrees(q.zoom, q.density);
       const cells = new Map<string, LegacyShip>();
       for (const s of out) {
         const key = `${Math.floor(s.longitude / c)}:${Math.floor(s.latitude / c)}`;

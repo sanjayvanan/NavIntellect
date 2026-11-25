@@ -95,7 +95,7 @@ Reads are open while `AUTH_REQUIRED_FOR_READS=false`, which is the default becau
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/ships/trackList?hours=50[&bbox=minLon,minLat,maxLon,maxLat][&limit=]` | **Legacy contract**: flat array in the frontend's shape. The map sends its viewport bbox and `limit=3000`. A bbox with minLon > maxLon crosses the antimeridian |
+| GET | `/api/ships/trackList?hours=50[&bbox=minLon,minLat,maxLon,maxLat][&limit=]` | **Legacy contract**: flat array in the frontend's shape. The map sends its viewport bbox, `limit=5000`, `zoom` and `density`. Below zoom 10 it gets one representative ship per grid cell, with `density` as cells per 256 px tile (default 16). Requests with `zoom` are served from an in-memory copy of the live map in about 5–20 ms instead of going to the DB. A bbox with minLon > maxLon crosses the antimeridian |
 | GET | `/api/vessels?q=&bbox=&limit=` | Searches every known vessel by name, MMSI, IMO or callsign. Exact matches rank first, then name prefix, then fuzzy name, then recency. Rows use the map shape |
 | GET | `/api/vessels/:mmsi` | Static data, latest position, zones the vessel is currently in |
 | GET | `/api/vessels/:mmsi/track?from=&to=&tolerance=` | GeoJSON LineString with timestamps, combining packed history and the raw tail |

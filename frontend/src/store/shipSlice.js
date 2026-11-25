@@ -14,23 +14,25 @@ const applyFilters = (ships, filters) => {
 }
 
 // Most recently heard ships per map request; the world has 50k+, more than the map can draw.
-export const MAP_SHIP_LIMIT = 3000
+export const MAP_SHIP_LIMIT = 5000
 // Must match FULL_DETAIL_ZOOM in backend/src/api/shipCache.ts.
 export const FULL_DETAIL_ZOOM = 10
 
 /**
  * Loads ships for the map.
  * - bbox: [minLon, minLat, maxLon, maxLat] of the viewport, or null for anywhere
- * - zoom: map zoom; zoomed out, the server returns one representative ship per ~32 px cell
+ * - zoom: map zoom; zoomed out, the server returns one representative ship per grid cell
  *   (level of detail), zoomed in (>= FULL_DETAIL_ZOOM) every ship
+ * - density: grid cells per 256 px tile (see config/shipDensity.js); null with zoom >= FULL_DETAIL_ZOOM = no thinning
  */
 export const fetchShips = createAsyncThunk(
   'ships/fetchShips',
-  async ({ bbox = null, zoom = null } = {}, { rejectWithValue, signal }) => {
+  async ({ bbox = null, zoom = null, density = null } = {}, { rejectWithValue, signal }) => {
     try {
       const params = new URLSearchParams({ hours: '50', limit: String(MAP_SHIP_LIMIT) })
       if (bbox) params.set('bbox', bbox.join(','))
       if (zoom != null) params.set('zoom', String(Math.floor(zoom)))
+      if (density != null) params.set('density', String(density))
       const response = await fetch(`${API_BASE_URL}/api/ships/trackList?${params}`, { signal })
       if (!response.ok) throw new Error('Server Error')
       return response.json()
