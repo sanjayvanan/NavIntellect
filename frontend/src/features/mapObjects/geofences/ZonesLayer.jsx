@@ -6,6 +6,7 @@ import { outerRings, pointInRing } from '../../../utils/geo'
 import { isSelected, selectObject } from '../uiSlice'
 import { fetchZones } from './zonesSlice'
 import { zoneColor, zonePathStyle } from './zoneStyle'
+import { objectTypeOf, typeGlyphSvg } from '../objectTypes'
 
 const LABEL_MIN_ZOOM = 4
 
@@ -37,7 +38,7 @@ function ZonesLayer() {
       const p = z.properties
       const layer = L.geoJSON(z.geometry, { interactive: false, style: zonePathStyle(z, selected) })
       layer.bindTooltip(
-        `<span data-zone-id="${z.id}"><span class="zone-label-dot" style="background:${color}"></span>${escapeHtml(p.name)}${p.active ? ' <b class="zone-label-live">●</b>' : ''}</span>`,
+        `<span data-zone-id="${z.id}" title="${objectTypeOf(z).label}">${typeGlyphSvg(objectTypeOf(z).id, color)}${escapeHtml(p.name)}${p.active ? ' <b class="zone-label-live">●</b>' : ''}</span>`,
         { permanent: true, direction: 'center', className: `zone-label ${selected ? 'selected' : ''}`, interactive: false },
       )
       group.addLayer(layer)

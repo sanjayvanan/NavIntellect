@@ -6,8 +6,9 @@ import L from 'leaflet'
 import { CloseIcon } from '../../components/Icons'
 import { zoomToBounds, zoomToPoint } from '../../map/navigation'
 import { setHidden } from '../../store/themeSlice'
-import { densify, formatArea, toGeoJsonPolygon } from '../../utils/geo'
+import { densify, toGeoJsonPolygon } from '../../utils/geo'
 import { canEdit, isOperator } from './scope'
+import { describeObject, shapeFromDrawing } from './objectTypes'
 import { commandHandled, selectObject } from './uiSlice'
 import { initialPanelState, panelReducer } from './panelState'
 import { ACTIONS, actionById, actionOfTool, toolById } from './tools/registry'
@@ -20,7 +21,7 @@ import { createZone, deleteZone, updateZone } from './geofences/zonesSlice'
 import { ZoneForm } from './geofences/ZoneForm'
 import { newZoneForm, zoneFormFrom } from './geofences/zoneFormModel'
 import { ZoneDetails } from './geofences/ZoneDetails'
-import { KIND_LABEL, zoneColor } from './geofences/zoneStyle'
+import { zoneColor } from './geofences/zoneStyle'
 import { createPin, deletePin, updatePin, clearPinsError } from './pins/pinsSlice'
 import { PinForm } from './pins/PinForm'
 import { newPinForm, pinFormFrom } from './pins/pinFormModel'
@@ -51,6 +52,7 @@ function MapObjectsPanel({ style, theme, onClose }) {
   const [state, send] = useReducer(panelReducer, initialPanelState)
   const [filter, setFilter] = useState('')
   const [listTab, setListTab] = useState(null) // null = pick a sensible tab (see below)
+  const [typeFilter, setTypeFilter] = useState(null) // object type shown in the list (null = all)
   const lastShape = useRef('polygon') // "Draw zone" reopens the shape used last
   const panelRef = useRef(null)
   const canShare = isOperator(user)
@@ -70,7 +72,7 @@ function MapObjectsPanel({ style, theme, onClose }) {
     onReadout: (r) => send({ type: 'readout', readout: r }),
     onCancel: () => send({ type: 'toolEnded' }),
     onPinPlaced: (latlng) => send({ type: 'show', view: { kind: 'pinDraft', latlng } }),
-    onDrawFinish: ({ mode, points, readout: r }) => {
+    onDrawFinish: ({ mode, points, readout: r, origin }) => {
       if (mode === 'ruler') return send({ type: 'show', view: { kind: 'ruler', readout: r } })
       let geometry
       try {
@@ -81,7 +83,11 @@ function MapObjectsPanel({ style, theme, onClose }) {
         send({ type: 'toolEnded' })
         return send({ type: 'error', error: err.message })
       }
-      const shape = { geometry, measures: { areaNm2: r.areaNm2, perimeterNm: r.perimeterNm, radiusNm: r.radiusNm } }
+      const shape = {
+        geometry,
+        ...shapeFromDrawing(mode, points, r, origin), // shape + shape_meta saved with the zone
+        measures: { areaNm2: r.areaNm2, perimeterNm: r.perimeterNm, radiusNm: r.radiusNm, widthNm: r.widthNm, heightNm: r.heightNm },
+      }
       if (viewRef.current.kind === 'zoneEdit') send({ type: 'redrawn', redraw: shape })
       else send({ type: 'show', view: { kind: 'zoneDraft', ...shape } })
     },
@@ -148,7 +154,7 @@ function MapObjectsPanel({ style, theme, onClose }) {
   }
 
   const saveZoneDraft = (body) =>
-    run(createZone({ ...body, geometry: view.geometry }), (zone) => {
+    run(createZone({ ...body, geometry: view.geometry, shape: view.shape, shape_meta: view.shape_meta }), (zone) => {
       tools.current.draw.clearResult()
       dispatch(selectObject({ type: 'zone', id: zone.id }))
     })
@@ -156,7 +162,8 @@ function MapObjectsPanel({ style, theme, onClose }) {
   const saveZoneEdit = (body) => {
     // eslint-disable-next-line no-unused-vars -- a zone's scope can't change after creation
     const { scope, ...rest } = body
-    run(updateZone({ id: view.zoneId, ...rest, ...(view.redraw ? { geometry: view.redraw.geometry } : {}) }), () =>
+    const redraw = view.redraw ? { geometry: view.redraw.geometry, shape: view.redraw.shape, shape_meta: view.redraw.shape_meta } : {}
+    run(updateZone({ id: view.zoneId, ...rest, ...redraw }), () =>
       tools.current.draw.clearResult(),
     )
   }
@@ -201,28 +208,38 @@ function MapObjectsPanel({ style, theme, onClose }) {
     onDelete: () => send({ type: 'confirm', confirm: { type, feature: f } }),
     ...extra,
   })
-  const zoneRow = (z) =>
-    rowFor('zone', z, {
+  const zoneRow = (z) => {
+    const { type, facts } = describeObject(z)
+    return rowFor('zone', z, {
       color: zoneColor(z),
+      type,
+      facts, // type + figures; the zone category (Monitoring, Port…) is in its details
       title: z.properties.name,
       badge: z.properties.preset ? 'preset' : null,
       live: z.properties.active,
-      subtitle: `${KIND_LABEL[z.properties.kind]} · ${formatArea(Number(z.properties.area_nm2))}`,
       onSelect: () => select('zone', z, zoomToZone),
       onZoom: () => zoomToZone(z),
       onEdit: () => send({ type: 'show', view: { kind: 'zoneEdit', zoneId: z.id, redraw: null } }),
     })
-  const pinRow = (p) =>
-    rowFor('pin', p, {
+  }
+  const pinRow = (p) => {
+    const { type, facts } = describeObject(p)
+    return rowFor('pin', p, {
       color: p.properties.style?.color,
-      swatch: <PinGlyph style={p.properties.style} size={14} />,
+      type,
+      facts: [...facts, PIN_ICON_LABELS[p.properties.style?.icon] || 'Pin'],
+      tile: (
+        <span className="gf-type-tile pin" aria-hidden="true">
+          <PinGlyph style={p.properties.style} size={15} />
+        </span>
+      ),
       title: p.properties.name,
       badge: p.properties.scope === 'shared' ? 'shared' : null,
-      subtitle: PIN_ICON_LABELS[p.properties.style?.icon] || 'Pin',
       onSelect: () => select('pin', p, zoomToPin),
       onZoom: () => zoomToPin(p),
       onEdit: () => send({ type: 'show', view: { kind: 'pinEdit', pinId: p.id } }),
     })
+  }
   const lists = {
     pins: pins.filter(matches).map(pinRow),
     mine: zones.filter((z) => z.properties.scope === 'personal' && matches(z)).map(zoneRow),
@@ -233,14 +250,15 @@ function MapObjectsPanel({ style, theme, onClose }) {
     mine: zones.filter((z) => z.properties.scope === 'personal').length,
     shared: zones.filter((z) => z.properties.scope === 'shared').length,
   }
-  const setAll = (type, rows) => (hide) => dispatch(setHidden({ type, ids: rows.map((r) => r.key), hidden: hide }))
+  // Hide/show the rows currently listed (the tab, narrowed by the type filter).
+  const setAll = (type) => (hide, rows) => dispatch(setHidden({ type, ids: rows.map((r) => r.key), hidden: hide }))
   const tabs = [
     {
       id: 'pins',
       label: 'Pins',
       total: totals.pins,
       rows: lists.pins,
-      onSetAllHidden: setAll('pin', lists.pins),
+      onSetAllHidden: setAll('pin'),
       empty: { text: 'No pins yet. Drop one to mark a buoy, a wreck, a meeting point…', actionLabel: 'Drop a pin', onAction: () => toggleAction('pin') },
     },
     {
@@ -248,10 +266,10 @@ function MapObjectsPanel({ style, theme, onClose }) {
       label: 'My zones',
       total: totals.mine,
       rows: lists.mine,
-      onSetAllHidden: setAll('zone', lists.mine),
+      onSetAllHidden: setAll('zone'),
       empty: { text: 'Draw an area to watch: get its size, the ships inside and alerts.', actionLabel: 'Draw a zone', onAction: () => toggleAction('zone') },
     },
-    { id: 'shared', label: 'Shared', total: totals.shared, rows: lists.shared, onSetAllHidden: setAll('zone', lists.shared), empty: { text: 'No shared zones.' } },
+    { id: 'shared', label: 'Shared', total: totals.shared, rows: lists.shared, onSetAllHidden: setAll('zone'), empty: { text: 'No shared zones.' } },
   ]
   // Until the user picks a tab: their pins if they have any, else their zones, else the shared ones.
   const activeTab = listTab ?? (totals.pins ? 'pins' : totals.mine ? 'mine' : 'shared')
@@ -397,7 +415,18 @@ function MapObjectsPanel({ style, theme, onClose }) {
       {zonesStatus === 'loading' && !zones.length ? (
         <p className="gf-empty">Loading…</p>
       ) : (
-        <ObjectTabs tabs={tabs} active={activeTab} onChange={setListTab} filter={filter} onFilter={setFilter} />
+        <ObjectTabs
+          tabs={tabs}
+          active={activeTab}
+          onChange={(id) => {
+            setListTab(id)
+            setTypeFilter(null)
+          }}
+          filter={filter}
+          onFilter={setFilter}
+          typeFilter={typeFilter}
+          onTypeFilter={setTypeFilter}
+        />
       )}
       <p className="gf-tip">
         <kbd>Right-click</kbd> the map for quick actions: drop a pin, measure from a point, copy coordinates.

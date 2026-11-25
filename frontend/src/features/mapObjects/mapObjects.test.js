@@ -8,6 +8,7 @@ import pinsReducer, { createPin, deletePin, movePin } from './pins/pinsSlice'
 import { DEFAULT_PIN_STYLE, GLYPHS, PIN_ICONS, pinSvg } from './pins/pinStyle'
 import { newPinForm, pinBodyFrom, pinFormFrom } from './pins/pinFormModel'
 import { zoneBodyFrom } from './geofences/zoneFormModel'
+import { describeObject, objectTypeOf, shapeFromDrawing, typeGlyphSvg } from './objectTypes'
 
 const feature = (id, props = {}, coordinates = [10, 20]) => ({ type: 'Feature', id, geometry: { type: 'Point', coordinates }, properties: { id, ...props } })
 
@@ -132,5 +133,46 @@ describe('zone form model', () => {
       active: true,
       rules: { alert_on_exit: false, max_speed: 12 },
     })
+  })
+})
+
+describe('object types', () => {
+  const zone = (shape, shape_meta = {}, extra = {}) => ({
+    type: 'Feature',
+    id: 'z',
+    geometry: { type: 'MultiPolygon', coordinates: [] },
+    properties: { shape, shape_meta, area_nm2: '25.4', ...extra },
+  })
+
+  it('names pins as points and zones by the shape they were drawn as', () => {
+    expect(objectTypeOf(feature('p', {}, [72.8, 18.9])).id).toBe('point')
+    expect(objectTypeOf(zone('circle')).id).toBe('circle')
+    expect(objectTypeOf(zone('rectangle')).id).toBe('rectangle')
+    expect(objectTypeOf(zone(undefined)).id).toBe('polygon') // older zones without a shape
+  })
+
+  it('describes each type with its own figures', () => {
+    expect(describeObject(feature('p', {}, [72.8, -18.9])).facts).toEqual(['18.9000° S, 72.8000° E'])
+    expect(describeObject(zone('polygon', { corners: 5 })).facts).toEqual(['5 corners', '25.4 nm²'])
+    expect(describeObject(zone('rectangle', { width_nm: 3.1, height_nm: 2 })).facts).toEqual(['3.10 nm × 2.00 nm', '25.4 nm²'])
+    expect(describeObject(zone('circle', { radius_nm: 2.84 })).facts).toEqual(['r 2.84 nm', '25.4 nm²'])
+  })
+
+  it('captures shape and figures from a finished drawing', () => {
+    const pts = [{ lat: 0, lng: 0 }, { lat: 0, lng: 1 }, { lat: 1, lng: 1 }, { lat: 1, lng: 0 }]
+    expect(shapeFromDrawing('polygon', pts, {})).toEqual({ shape: 'polygon', shape_meta: { corners: 4 } })
+    expect(shapeFromDrawing('rectangle', pts, { widthNm: 60.0412, heightNm: 60.04 })).toEqual({
+      shape: 'rectangle',
+      shape_meta: { width_nm: 60.04, height_nm: 60.04 },
+    })
+    expect(shapeFromDrawing('circle', [], { radiusNm: 0.001 }, { lat: 10, lng: 370.5 })).toEqual({
+      shape: 'circle',
+      shape_meta: { radius_nm: 0.01, center: [10.5, 10] }, // never 0; longitude wrapped
+    })
+  })
+
+  it('only puts a valid colour into label SVG', () => {
+    expect(typeGlyphSvg('circle', '#ff0000')).toContain('stroke="#ff0000"')
+    expect(typeGlyphSvg('circle', '"><script>')).not.toContain('<script>')
   })
 })

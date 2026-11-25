@@ -2,22 +2,42 @@
 import { EditIcon, EyeIcon, TargetIcon, TrashIcon } from './icons'
 import { IconButton } from './controls'
 
+/** Small labelled chip saying what an object is (Point, Polygon, Rectangle, Circle). */
+export function TypeChip({ type }) {
+  const Icon = type.Icon
+  return (
+    <span className={`gf-type-chip t-${type.id}`}>
+      <Icon size={12} />
+      {type.label}
+    </span>
+  )
+}
+
 /**
  * One row of a map-object list (zone, pin, …).
- * `swatch` is a CSS colour or a React node (e.g. a pin glyph); actions show on hover/selection.
+ *   type   – entry of OBJECT_TYPES (what the object is); facts – short figures for it
+ *   tile   – optional React node replacing the default type tile (e.g. the pin's own glyph)
  */
-export function ObjectRow({ color, swatch, title, badge, live, subtitle, hidden, selected, editable, onSelect, onToggleHidden, onZoom, onEdit, onDelete }) {
+export function ObjectRow({ color, type, facts = [], tile, title, badge, live, hidden, selected, editable, onSelect, onToggleHidden, onZoom, onEdit, onDelete }) {
+  const Icon = type.Icon
   return (
     <li className={`gf-zone ${selected ? 'selected' : ''} ${hidden ? 'hidden' : ''}`} style={{ '--zone': color }}>
-      <button type="button" className="gf-zone-main" onClick={onSelect}>
-        {swatch ?? <span className="gf-swatch" />}
+      <button type="button" className="gf-zone-main" onClick={onSelect} aria-label={`${type.label}: ${title}`}>
+        {tile ?? (
+          <span className="gf-type-tile" aria-hidden="true">
+            <Icon size={16} />
+          </span>
+        )}
         <span className="gf-zone-text">
           <span className="gf-zone-name">
             <span className="gf-zone-title">{title}</span>
             {badge && <em>{badge}</em>}
             {live && <b className="gf-live" title="Alerts on" />}
           </span>
-          {subtitle && <small>{subtitle}</small>}
+          <span className="gf-zone-facts">
+            <TypeChip type={type} />
+            {facts.length > 0 && <small>{facts.join(' · ')}</small>}
+          </span>
         </span>
       </button>
       <div className="gf-zone-actions">
@@ -39,33 +59,5 @@ export function ObjectRow({ color, swatch, title, badge, live, subtitle, hidden,
         )}
       </div>
     </li>
-  )
-}
-
-/** Titled list with a count and "Hide all / Show all". `rows` are ObjectRow props (with `key`). */
-export function ObjectSection({ title, rows, empty, onSetAllHidden }) {
-  const allHidden = rows.length > 0 && rows.every((r) => r.hidden)
-  return (
-    <section className="gf-section">
-      <div className="gf-section-head">
-        <h4>
-          {title} <span>{rows.length}</span>
-        </h4>
-        {rows.length > 0 && (
-          <button type="button" className="gf-link" onClick={() => onSetAllHidden(!allHidden)}>
-            {allHidden ? 'Show all' : 'Hide all'}
-          </button>
-        )}
-      </div>
-      {rows.length ? (
-        <ul className="gf-list">
-          {rows.map(({ key, ...row }) => (
-            <ObjectRow key={key} {...row} />
-          ))}
-        </ul>
-      ) : (
-        <p className="gf-empty">{empty}</p>
-      )}
-    </section>
   )
 }

@@ -1178,3 +1178,204 @@
     animation: none;
   }
 }
+
+/* ======================================================================
+   Object types (Point / Polygon / Rectangle / Circle): tiles, chips, filter
+   ====================================================================== */
+.gf-panel {
+  --t-point: #0891b2;
+  --t-polygon: #4f46e5;
+  --t-rectangle: #d97706;
+  --t-circle: #9333ea;
+}
+
+.gf-panel.dark {
+  --t-point: #22d3ee;
+  --t-polygon: #818cf8;
+  --t-rectangle: #fbbf24;
+  --t-circle: #c084fc;
+}
+
+/* Leading tile: the object's shape icon, in the object's own colour */
+.gf-type-tile {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--zone) 16%, transparent);
+  color: var(--zone);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--zone) 35%, transparent);
+}
+
+.gf-type-tile.big {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+}
+
+.gf-type-tile.pin {
+  background: color-mix(in srgb, var(--zone) 12%, transparent);
+}
+
+.gf-zone-facts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 2px;
+}
+
+.gf-zone-facts small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--panel-muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* "Point" / "Polygon" / … chip */
+.gf-type-chip {
+  --t: var(--panel-muted);
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px 0 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--t) 13%, transparent);
+  color: var(--t);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 17px;
+  letter-spacing: 0.02em;
+}
+
+.t-point {
+  --t: var(--t-point);
+}
+.t-polygon {
+  --t: var(--t-polygon);
+}
+.t-rectangle {
+  --t: var(--t-rectangle);
+}
+.t-circle {
+  --t: var(--t-circle);
+}
+
+.gf-details-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+/* Type filter chips under the search box */
+.gf-type-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0 0 8px;
+}
+
+.gf-type-filter button {
+  --t: var(--panel-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--panel-text);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.gf-type-filter button svg {
+  color: var(--t);
+}
+
+.gf-type-filter button span {
+  color: var(--panel-muted);
+  font-weight: 500;
+}
+
+.gf-type-filter button:hover {
+  border-color: var(--t);
+}
+
+.gf-type-filter button.on {
+  border-color: var(--t);
+  background: color-mix(in srgb, var(--t) 13%, transparent);
+  color: var(--t);
+}
+
+.gf-type-filter button:first-child.on {
+  --t: var(--gf-accent);
+}
+
+/* Shape icon inside zone labels on the map */
+.leaflet-tooltip.zone-label .type-glyph {
+  margin-right: 5px;
+  vertical-align: -2px;
+}
+
+.leaflet-tooltip.zone-label.selected .type-glyph {
+  filter: brightness(1.6);
+}
+
+/* Row actions float over the end of the row on hover / focus / selection, so the type and
+   figures get the full row width the rest of the time. */
+.gf-zone {
+  position: relative;
+}
+
+.gf-zone-actions {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--panel-bg);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.14);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.gf-zone:hover .gf-zone-actions,
+.gf-zone:focus-within .gf-zone-actions,
+.gf-zone.selected .gf-zone-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Touch screens have no hover: keep the actions in the row there. */
+@media (hover: none) {
+  .gf-zone-actions {
+    position: static;
+    transform: none;
+    box-shadow: none;
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.gf-btn {
+  white-space: nowrap;
+}
+
+.gf-type-filter {
+  gap: 4px;
+}
+
+.gf-type-filter button {
+  padding: 2px 7px;
+  font-size: 11px;
+}

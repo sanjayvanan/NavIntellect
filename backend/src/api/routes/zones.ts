@@ -36,17 +36,47 @@ const rules = z
 const kind = z.enum(['restricted', 'monitoring', 'port', 'anchorage']);
 const color = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Colour must be #rrggbb');
 
-const createBody = z.object({
+// How the zone was drawn (geometry is always stored as a polygon) and the figures that describe it.
+const shape = z.enum(['polygon', 'rectangle', 'circle']);
+const nm = z.number().positive().max(20_000);
+const shapeMeta = z
+  .object({
+    corners: z.number().int().min(3).max(MAX_VERTICES).optional(), // polygon: vertices the user placed
+    width_nm: nm.optional(), // rectangle
+    height_nm: nm.optional(),
+    radius_nm: nm.optional(), // circle
+    center: z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)]).optional(), // circle [lng, lat]
+  })
+  .strict();
+
+// Editable fields WITHOUT defaults. (zod applies `.default()` even inside `.partial()`, so a PATCH
+// schema derived from the create schema would silently reset every omitted field.)
+const fields = {
   name: z.string().trim().min(1).max(120),
-  kind: kind.default('monitoring'),
+  kind,
   geometry,
+  shape,
+  shape_meta: shapeMeta,
+  rules,
+  active: z.boolean(),
+  color: color.nullish(),
+  description: z.string().trim().max(500).nullish(),
+};
+
+const createBody = z.object({
+  ...fields,
+  kind: kind.default('monitoring'),
+  shape: shape.default('polygon'),
+  shape_meta: shapeMeta.default({}),
   rules: rules.default({}),
   active: z.boolean().default(false), // monitoring (alerts) off until switched on
   scope: z.enum(['personal', 'shared']).default('personal'),
-  color: color.nullish(),
-  description: z.string().trim().max(500).nullish(),
 });
-const patchBody = createBody.omit({ scope: true }).partial();
+const patchBody = z
+  .object(fields)
+  .partial()
+  // A redrawn zone may change shape; shape and its figures always travel together.
+  .refine((b) => (b.shape === undefined) === (b.shape_meta === undefined), { message: 'shape and shape_meta go together' });
 
 const ZONE_FEATURE = `
   jsonb_build_object(
@@ -57,6 +87,7 @@ const ZONE_FEATURE = `
       'id', z.id, 'name', z.name, 'kind', z.kind, 'rules', z.rules, 'active', z.active,
       'scope', ${scopeSql('z')},
       'owner_id', z.owner_id, 'color', z.color, 'description', z.description, 'preset', z.preset,
+      'shape', z.shape, 'shape_meta', z.shape_meta,
       'area_nm2', round((ST_Area(z.geom) / 3429904)::numeric, 2),
       'perimeter_nm', round((ST_Perimeter(z.geom) / 1852)::numeric, 2),
       'created_by', z.created_by, 'created_at', z.created_at, 'updated_at', z.updated_at,
@@ -140,10 +171,13 @@ export async function zoneRoutes(app: FastifyInstance) {
       if (ownerId) await enforcePersonalCap(c, 'zones', ownerId, MAX_PERSONAL_ZONES, 'zones');
       const { rows } = await c.query(
         `WITH z AS (
-           INSERT INTO zones (name, kind, geom, rules, active, created_by, owner_id, color, description)
-           VALUES ($1, $2, ${GEOM_SQL.replace('$GEOM', '$3')}, $4, $5, $6, $7, $8, $9) RETURNING *
+           INSERT INTO zones (name, kind, geom, rules, active, created_by, owner_id, color, description, shape, shape_meta)
+           VALUES ($1, $2, ${GEOM_SQL.replace('$GEOM', '$3')}, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *
          ) SELECT ${ZONE_FEATURE} AS f FROM z`,
-        [b.name, b.kind, JSON.stringify(b.geometry), b.rules, b.active, user.id, ownerId, b.color ?? null, b.description ?? null],
+        [
+          b.name, b.kind, JSON.stringify(b.geometry), b.rules, b.active, user.id, ownerId, b.color ?? null, b.description ?? null,
+          b.shape, b.shape_meta,
+        ],
       );
       await audit(user.id, 'zone.create', 'zone', rows[0].f.id, { name: b.name, kind: b.kind, scope: b.scope }, c);
       return rows[0].f;
@@ -166,12 +200,15 @@ export async function zoneRoutes(app: FastifyInstance) {
              active = COALESCE($6, active),
              color  = CASE WHEN $7::boolean THEN $8 ELSE color END,
              description = CASE WHEN $9::boolean THEN $10 ELSE description END,
+             shape  = COALESCE($11, shape),
+             shape_meta = COALESCE($12, shape_meta),
              updated_at = now()
            WHERE id = $1 RETURNING *
          ) SELECT ${ZONE_FEATURE} AS f FROM z`,
         [
           id, b.name ?? null, b.kind ?? null, b.geometry ? JSON.stringify(b.geometry) : null, b.rules ?? null, b.active ?? null,
           b.color !== undefined, b.color ?? null, b.description !== undefined, b.description ?? null,
+          b.shape ?? null, b.shape_meta ?? null,
         ],
       );
       // Geometry or activation changed: reset presence so it's recomputed from fresh positions without spurious alerts.

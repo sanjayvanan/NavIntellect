@@ -237,7 +237,29 @@ describe('auth', () => {
     expect(shared.statusCode).toBe(403);
     const mine = await app.inject({ method: 'POST', url: '/api/zones', headers: { authorization: `Bearer ${viewerToken}` }, payload: { name: 'mine', geometry } });
     expect(mine.statusCode).toBe(201);
-    expect(mine.json().properties).toMatchObject({ scope: 'personal', active: false });
+    expect(mine.json().properties).toMatchObject({ scope: 'personal', active: false, shape: 'polygon', shape_meta: {} });
+
+    // Shape is recorded on create and can change with a redraw (shape and its figures together).
+    const auth = { authorization: `Bearer ${viewerToken}` };
+    const circle = await app.inject({
+      method: 'POST', url: '/api/zones', headers: auth,
+      payload: { name: 'c', geometry, shape: 'circle', shape_meta: { radius_nm: 3.2, center: [10.05, 10.03] } },
+    });
+    expect(circle.json().properties).toMatchObject({ shape: 'circle', shape_meta: { radius_nm: 3.2, center: [10.05, 10.03] } });
+    const id = circle.json().id;
+    const redrawn = await app.inject({
+      method: 'PATCH', url: `/api/zones/${id}`, headers: auth,
+      payload: { geometry, shape: 'rectangle', shape_meta: { width_nm: 6, height_nm: 6 } },
+    });
+    expect(redrawn.json().properties).toMatchObject({ shape: 'rectangle', shape_meta: { width_nm: 6, height_nm: 6 } });
+    // Partial edits change only what they send (no defaults filled in for omitted fields).
+    await app.inject({ method: 'PATCH', url: `/api/zones/${id}`, headers: auth, payload: { kind: 'port', rules: { max_speed: 5 } } });
+    const toggled = await app.inject({ method: 'PATCH', url: `/api/zones/${id}`, headers: auth, payload: { active: true } });
+    expect(toggled.json().properties).toMatchObject({ active: true, kind: 'port', rules: { max_speed: 5 }, shape: 'rectangle', shape_meta: { width_nm: 6 } });
+    const half = await app.inject({ method: 'PATCH', url: `/api/zones/${id}`, headers: auth, payload: { shape: 'polygon' } });
+    expect(half.statusCode).toBe(400);
+    const bad = await app.inject({ method: 'POST', url: '/api/zones', headers: auth, payload: { name: 'x', geometry, shape: 'hexagon' } });
+    expect(bad.statusCode).toBe(400);
   });
 });
 
@@ -382,6 +404,10 @@ describe('personal zones and presets', () => {
     expect(presets.map((f) => f.properties.name)).toContain('Strait of Hormuz');
     expect(presets.every((f) => f.properties.active === false && f.properties.scope === 'shared')).toBe(true);
     expect(Number(presets[0]!.properties.area_nm2)).toBeGreaterThan(0);
+    const byName = Object.fromEntries(presets.map((f) => [f.properties.name, f.properties]));
+    expect(byName['Panama Canal']).toMatchObject({ shape: 'rectangle' });
+    expect(Number((byName['Panama Canal']!.shape_meta as { width_nm: number }).width_nm)).toBeGreaterThan(25);
+    expect(byName['Strait of Hormuz']).toMatchObject({ shape: 'polygon', shape_meta: { corners: 8 } });
   });
 
   it('keeps a personal zone, its vessels and its alerts private to the owner', async () => {

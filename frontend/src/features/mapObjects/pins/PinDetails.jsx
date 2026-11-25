@@ -7,6 +7,8 @@ import { CopyIcon, EditIcon, TargetIcon, TrashIcon } from '../ui/icons'
 import { IconButton } from '../ui/controls'
 import { Coordinates, PinGlyph } from './PinParts'
 import { PIN_ICON_LABELS, pinLatLng } from './pinStyle'
+import { OBJECT_TYPES } from '../objectTypes'
+import { TypeChip } from '../ui/ObjectList'
 
 const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
@@ -29,12 +31,17 @@ export function PinDetails({ pin, editable, onEdit, onDelete, onZoom, onClose })
   return (
     <div className="gf-details" style={{ '--zone': p.style?.color }}>
       <div className="gf-details-head">
-        <PinGlyph style={p.style} />
+        <span className="gf-type-tile big pin" aria-hidden="true">
+          <PinGlyph style={p.style} size={20} />
+        </span>
         <div>
           <strong>{p.name}</strong>
-          <small>
-            {PIN_ICON_LABELS[p.style?.icon] || 'Pin'} · {scopeLabel(pin)}
-          </small>
+          <span className="gf-details-sub">
+            <TypeChip type={OBJECT_TYPES.point} />
+            <small>
+              {PIN_ICON_LABELS[p.style?.icon] || 'Pin'} · {scopeLabel(pin)}
+            </small>
+          </span>
         </div>
         <button type="button" className="panel-close" onClick={onClose} aria-label="Close details">
           <CloseIcon size={14} />

@@ -24,7 +24,8 @@ import { enterToolMode } from './interaction'
  * Every placed leg carries a label with its length; the cursor shows the live leg from the last
  * point (distance + true bearing) and the running total / area.
  *
- * Callbacks: onChange(readout) on every update, onFinish({ mode, points, readout }), onCancel().
+ * Callbacks: onChange(readout) on every update, onFinish({ mode, points, readout, origin }), onCancel().
+ * `origin` is the first click (the centre, for circles).
  * `start(mode, { from })` begins with a first point already placed (e.g. "Measure from here").
  */
 const SNAP_PX = 12 // click this close to the first vertex to close the polygon
@@ -220,9 +221,11 @@ export class DrawTool {
     this.cursor = null
     const points = this._shapePoints(false)
     const readout = this.readout()
+    this._origin = this.points[0] // circle centre / first corner
     this.stop()
     this._drawResult(mode, points, readout)
-    this.cb.onFinish?.({ mode, points: points.map((p) => ({ lat: p.lat, lng: p.lng })), readout })
+    const origin = this._origin ? { lat: this._origin.lat, lng: this._origin.lng } : null
+    this.cb.onFinish?.({ mode, points: points.map((p) => ({ lat: p.lat, lng: p.lng })), readout, origin })
   }
 
   // ---------- rendering ----------
