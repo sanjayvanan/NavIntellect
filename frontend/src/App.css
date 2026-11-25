@@ -1,0 +1,463 @@
+.app {
+  padding: 0;
+  margin: 0;
+  height: 100vh;
+  width: 100vw;
+}
+
+.map-container {
+  flex: 1;
+  position: relative;
+  height: calc(100% - 30px);
+}
+
+/* Fix for Leaflet markers */
+.leaflet-default-icon-path {
+  background-image: url(https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png);
+}
+
+.ship-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ship-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.ship-icon div {
+  transition: all 0.3s ease;
+}
+
+/* Optional: Add hover effect */
+.ship-icon:hover div {
+  transform: scale(1.2);
+  
+}
+
+.ship-popup {
+  min-width: 200px;
+  padding: 8px;
+}
+
+.ship-popup.dark {
+  background: #333;
+  color: white;
+}
+
+.ship-popup h3 {
+  margin: 0 0 8px 0;
+  color: #1e88e5;
+}
+
+.ship-popup.dark h3 {
+  color: #64b5f6;
+}
+
+.ship-popup p {
+  margin: 4px 0;
+  font-size: 14px;
+}
+
+.ship-popup table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.ship-popup td {
+  padding: 3px 0;
+  font-size: 12px;
+}
+
+.ship-popup td:first-child {
+  color: #666;
+  width: 40%;
+}
+
+.ship-popup td:last-child {
+  font-weight: 500;
+}
+
+.search-container {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 1000;
+  width: 300px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  font-size: 14px;
+}
+
+.search-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  margin-top: 5px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.search-result-item {
+  padding: 10px;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+}
+
+.search-result-item:hover {
+  background-color: #f5f5f5;
+}
+
+.ship-name {
+  font-weight: 500;
+  color: #333;
+}
+
+.ship-mmsi {
+  font-size: 12px;
+  color: #666;
+  margin-top: 2px;
+}
+
+.zoom-control-minimal {
+  position: fixed;
+  bottom: 45px;
+  right: 10px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: transparent;
+}
+
+.zoom-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: white;
+  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.dark .zoom-btn {
+  background: #333;
+  color: #fff;
+}
+
+.zoom-btn:hover:not(:disabled) {
+  background: #f5f5f5;
+  color: #333;
+}
+
+.dark .zoom-btn:hover:not(:disabled) {
+  background: #444;
+  color: #fff;
+}
+
+.zoom-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.zoom-level-minimal {
+  width: 32px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 500;
+  color: #666;
+  background: white;
+  margin: 4px 0;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.dark .zoom-level-minimal {
+  background: #333;
+  color: #fff;
+}
+
+.theme-toggle-container {
+  position: fixed;
+  top: 80px;
+  right: 10px;
+  z-index: 1001;
+}
+
+.theme-toggle-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: white;
+  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.theme-toggle-btn.dark {
+  background: #333;
+  color: #fff;
+}
+
+.theme-toggle-btn:hover {
+  background: #f5f5f5;
+  color: #333;
+}
+
+.theme-toggle-btn.dark:hover {
+  background: #444;
+  color: #fff;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .zoom-control-minimal {
+    bottom: 80px;
+  }
+  
+  .theme-toggle-container {
+    top: 120px;
+  }
+}
+
+.control-buttons {
+  position: fixed;
+  bottom: 70px;
+  left : 10px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cluster-toggle-btn {
+  width: 47px;
+  height: 47px;
+  border: 2px solid #bbbbbb;
+  background: white;
+  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.cluster-toggle-btn.dark {
+  background: #333;
+  color: #fff;
+}
+
+
+
+.cluster-toggle-btn.dark:hover {
+  background: #444;
+  color: #fff;
+}
+
+.cluster-toggle-btn.active {
+  background: #3498db;
+  color: white;
+}
+
+
+
+.cluster-toggle-btn.dark.active {
+  background: #2980b9;
+}
+
+.cluster-toggle-btn.dark.active:hover {
+  background: #216897;
+}
+
+.leaflet-control-layers.hidden {
+  display: none;
+}
+
+/* Popup Base Styles */
+.leaflet-popup-content-wrapper {
+  padding: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.15);
+}
+
+.leaflet-popup-content {
+  margin: 0;
+  min-width: 280px;
+}
+
+.leaflet-popup-tip {
+  display: none; /* Remove the tip arrow for cleaner look */
+}
+
+/* Ship Popup Styles */
+.ship-popup {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.ship-header {
+  padding: 16px;
+  background: linear-gradient(to right, #2980b9, #3498db);
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dark .ship-header {
+  background: linear-gradient(to right, #1a1a1a, #2c3e50);
+}
+
+.ship-title h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: white;
+}
+
+.ship-type {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-top: 4px;
+  display: block;
+}
+
+.ship-status-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #2ecc71;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2);
+}
+
+.ship-details {
+  padding: 16px;
+  background: white;
+}
+
+.dark .ship-details {
+  background: #333;
+  color: white;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.dark .detail-row {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.detail-row:last-child {
+  border-bottom: none;
+}
+
+.detail-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #666;
+  font-size: 14px;
+}
+
+.dark .detail-label {
+  color: #aaa;
+}
+
+.detail-icon {
+  font-style: normal;
+  font-size: 16px;
+}
+
+.detail-value {
+  font-weight: 500;
+  color: #333;
+  font-size: 14px;
+}
+
+.dark .detail-value {
+  color: #fff;
+}
+
+.detail-value.highlight {
+  color: #2980b9;
+}
+
+.dark .detail-value.highlight {
+  color: #3498db;
+}
+
+.detail-value small {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-left: 2px;
+}
+
+.coordinates {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-family: monospace;
+  font-size: 13px;
+}
+
+/* Close button */
+.leaflet-container a.leaflet-popup-close-button {
+  width: 24px;
+  height: 24px;
+  padding: 4px;
+  color: white;
+  font-weight: normal;
+  font-size: 18px;
+  right: 12px;
+  top: 12px;
+  transition: font-size 0.1s ease-in-out;
+}
+
+.leaflet-container a.leaflet-popup-close-button:hover {
+  font-size: 25px;
+
+}
+/* .detail-value.timestamp {
+  font-size: 0.9em;
+  color: #888;
+}
+
+.detail-value.timestamp.stale {
+  color: #ff6b6b;
+} */

@@ -1,0 +1,67 @@
+name: coastal-surveillance
+
+services:
+  # Optional local alternative to Supabase. Point DATABASE_URL at postgres://ais:ais@localhost:5433/ais to use it.
+  db:
+    profiles: ["local-db"]
+    image: postgis/postgis:17-3.5
+    environment:
+      POSTGRES_USER: ais
+      POSTGRES_PASSWORD: ais
+      POSTGRES_DB: ais
+    ports: ["5433:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ais -d ais"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # Full stack in containers: docker compose --profile app up -d --build
+  migrate:
+    profiles: ["app"]
+    build: .
+    command: ["node", "dist/bin/migrate.js"]
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379
+
+  ingestor:
+    profiles: ["app"]
+    build: .
+    command: ["node", "dist/bin/ingestor.js"]
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+
+  api:
+    profiles: ["app"]
+    build: .
+    command: ["node", "dist/bin/api.js"]
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379
+    ports: ["3000:3000"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+
+volumes:
+  pgdata:

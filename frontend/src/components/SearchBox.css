@@ -1,0 +1,141 @@
+.search-box-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  padding-top: 20px;
+}
+
+.search-container {
+  width: 300px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  font-size: 14px;
+  transition: all 0.3s ease;
+  color: #333;
+}
+
+.search-input.dark {
+  background: rgba(51, 51, 51, 0.95);
+  color: #ffffff;
+}
+
+.search-input:focus {
+  outline: none;
+  box-shadow: 0 2px 8px rgba(52, 152, 219, 0.3);
+}
+
+.search-input.dark:focus {
+  box-shadow: 0 2px 8px rgba(52, 152, 219, 0.2);
+}
+
+.search-input::placeholder {
+  color: #999;
+}
+
+.search-input.dark::placeholder {
+  color: #aaa;
+}
+
+.search-results {
+  margin-top: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  max-height: 300px;
+  overflow-y: auto;
+  color: #333;
+}
+
+.search-results.dark {
+  background: rgba(51, 51, 51, 0.95);
+  color: #ffffff;
+}
+
+.search-result-item {
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #333;
+}
+
+.search-result-item:hover {
+  background: rgba(52, 152, 219, 0.1);
+}
+
+.search-result-item.dark {
+  color: #ffffff;
+}
+
+.search-result-item.dark:hover {
+  background: rgba(52, 152, 219, 0.2);
+}
+
+.ship-name {
+  font-weight: 500;
+  margin-bottom: 4px;
+  color: #333;
+}
+
+.ship-name.dark {
+
+    color: #ffffff;
+  }
+
+.ship-mmsi {
+  font-size: 12px;
+  color: #666;
+}
+
+.ship-mmsi.dark {
+  color: #bbb;
+}
+
+.search-error {
+  background: rgba(231, 76, 60, 0.95);
+  color: white;
+  padding: 10px 16px;
+  border-radius: 8px;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.search-error.dark {
+  background: rgba(192, 57, 43, 0.95);
+}
+
+/* Scrollbar styling */
+.search-results::-webkit-scrollbar {
+  width: 8px;
+}
+
+.search-results::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.search-results::-webkit-scrollbar-thumb {
+  background: #ddd;
+  border-radius: 4px;
+}
+
+.search-results.dark::-webkit-scrollbar-thumb {
+  background: #666;
+}
+
+.search-results::-webkit-scrollbar-thumb:hover {
+  background: #ccc;
+}
+
+.search-results.dark::-webkit-scrollbar-thumb:hover {
+  background: #777;
+}
