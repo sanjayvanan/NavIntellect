@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import { startMaintenance } from '../db/maintenance.js';
+import { startHeartbeat, startMaintenance } from '../db/maintenance.js';
 import { pool } from '../db/pool.js';
 import { AisStreamClient } from '../ingest/aisstream.js';
 import { normalize, SUBSCRIBED_MESSAGE_TYPES } from '../ingest/normalize.js';
@@ -47,8 +47,10 @@ const stopMaintenance = startMaintenance({
   rawRetentionHours: config.RAW_RETENTION_HOURS,
   tracksRetentionDays: config.TRACKS_RETENTION_DAYS,
   latestRetentionDays: config.LATEST_RETENTION_DAYS,
+  vesselsRetentionDays: config.VESSELS_RETENTION_DAYS,
   dbSizeLimitMb: config.DB_SIZE_LIMIT_MB,
 });
+const stopHeartbeat = startHeartbeat('ingestor');
 
 // AIS-gap sweep every minute.
 const gapTimer = setInterval(() => {
@@ -82,6 +84,7 @@ async function shutdown(signal: string) {
   clearInterval(gapTimer);
   clearInterval(statsTimer);
   stopMaintenance();
+  stopHeartbeat();
   stream.stop();
   await batcher.stop().catch((err) => logger.error({ err }, 'final flush failed'));
   await Promise.allSettled([pool.end(), redis.quit()]);

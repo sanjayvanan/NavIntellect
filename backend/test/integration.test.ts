@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { hashPassword } from '../src/api/auth/password.js';
 import { buildServer } from '../src/api/server.js';
-import { compactTracks, reindexBloated, storageGuard, tracksWatermark } from '../src/db/maintenance.js';
+import { compactTracks, pruneVessels, reindexBloated, startHeartbeat, storageGuard, tracksWatermark } from '../src/db/maintenance.js';
 import { pool } from '../src/db/pool.js';
 import { normalize } from '../src/ingest/normalize.js';
 import { createPipeline } from '../src/ingest/pipeline.js';
@@ -204,6 +204,33 @@ describe('vessels and tracks', () => {
     const elsewhere = (await app.inject({ url: `/api/tracks/area?bbox=-50,-50,-49,-49&from=${minsAgo(360).toISOString()}` })).json();
     expect(elsewhere.vessels).toEqual([]);
     expect((await app.inject({ url: '/api/tracks/area?bbox=170,0,-170,10' })).statusCode).toBe(400);
+  });
+
+  it('forgets ships not heard for a long time, but never one still on the map', async () => {
+    await pool.query(`DELETE FROM vessels WHERE mmsi IN (419900001, 419900002, 419900003)`);
+    await pool.query(
+      `INSERT INTO vessels (mmsi, name, first_seen, last_seen) VALUES
+         (419900001, 'OLD GONE', now() - interval '60 days', now() - interval '40 days'),
+         (419900002, 'OLD ON MAP', now() - interval '60 days', now() - interval '40 days'),
+         (419900003, 'RECENT', now() - interval '2 days', now() - interval '1 day')`,
+    );
+    await pool.query(
+      `INSERT INTO vessel_latest (mmsi, ts, lat, lon, geom, msg_type) VALUES (419900002, now() - interval '1 day', 1, 1, ST_SetSRID(ST_MakePoint(1, 1), 4326)::geography, 1)
+       ON CONFLICT (mmsi) DO NOTHING`,
+    );
+    expect(await pruneVessels(30)).toBeGreaterThanOrEqual(1);
+    const { rows } = await pool.query(`SELECT mmsi FROM vessels WHERE mmsi IN (419900001, 419900002, 419900003) ORDER BY mmsi`);
+    expect(rows.map((r) => r.mmsi)).toEqual([419900002, 419900003]);
+    await pool.query(`DELETE FROM vessels WHERE mmsi IN (419900002, 419900003)`); // cascades to vessel_latest
+  });
+
+  it('writes a database heartbeat (Supabase free-plan keep-alive)', async () => {
+    await pool.query(`DELETE FROM job_state WHERE name = 'heartbeat:test'`);
+    const stop = startHeartbeat('test');
+    await new Promise((r) => setTimeout(r, 300));
+    stop();
+    const { rows } = await pool.query(`SELECT value FROM job_state WHERE name = 'heartbeat:test'`);
+    expect(Date.now() - new Date(rows[0].value).getTime()).toBeLessThan(60_000);
   });
 
   it('rebuilds bloated live-position indexes, and leaves normal ones alone', async () => {

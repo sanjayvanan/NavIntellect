@@ -89,6 +89,12 @@ Zone rules (`rules` jsonb):
 
 Repeats of the same alert are suppressed for `ALERT_COOLDOWN_MINUTES`.
 
+## Keeping the free plan running
+
+- **Storage (500 MB):** the ingestor's maintenance, at start and every 10 minutes, drops raw positions after packing them (`RAW_RETENTION_HOURS`), packed tracks after `TRACKS_RETENTION_DAYS`, ships off the map after `LATEST_RETENTION_DAYS`, and ship details not heard for `VESSELS_RETENTION_DAYS`. It also rebuilds the `vessel_latest` indexes when updates have bloated them. Above 85 % of `DB_SIZE_LIMIT_MB` it drops the oldest day of tracks.
+- **Egress (about 5 GB a month):** the API keeps the live ship list in memory, fed by Redis. It reloads it from the database only at start, after a Redis reconnect, and once a day.
+- **Pausing after a week without activity:** the API and the ingestor write a heartbeat (`job_state` `heartbeat:api` / `heartbeat:ingestor`) at start and then daily. Migration `012_keepalive_cron.sql` also schedules a pg_cron job inside the database (`keepalive_ais`, daily at 03:17 UTC, `heartbeat:pg_cron`), so the project stays active even when no server runs. To check: `SELECT * FROM cron.job_run_details ORDER BY start_time DESC LIMIT 5;`, or open Integrations → Cron in the Supabase dashboard.
+
 ## API
 
 The web app requires signing in, but the map's read endpoints stay open while `AUTH_REQUIRED_FOR_READS=false` (the default). Writes always need `Authorization: Bearer <access_token>`. Anyone can create an account from the sign-in page while `ALLOW_REGISTRATION=true` (the default). New accounts are always `viewer`; an admin raises roles through `/api/users`.

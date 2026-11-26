@@ -33,6 +33,8 @@ const schema = z.object({
   TRACKS_RETENTION_DAYS: z.coerce.number().int().positive().default(3),
   /** Ships not heard from in this long disappear from the live map (static data is kept). */
   LATEST_RETENTION_DAYS: z.coerce.number().int().positive().default(7),
+  /** Ships (name, type, size…) not heard for this many days are forgotten (they come back when heard). */
+  VESSELS_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
   /** Database plan limit; above 85 % the oldest track day is dropped (Supabase free tier = 500). */
   DB_SIZE_LIMIT_MB: z.coerce.number().int().positive().default(500),
   /** History sampling: at most one stored point per vessel per N seconds (0 = keep every message). */

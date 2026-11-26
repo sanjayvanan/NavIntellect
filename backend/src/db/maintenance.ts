@@ -10,6 +10,8 @@ export interface MaintenanceOptions {
   rawRetentionHours: number;
   tracksRetentionDays: number;
   latestRetentionDays: number;
+  /** Ship static data (vessels) not heard for this long is deleted; at least the other retentions. */
+  vesselsRetentionDays?: number;
   dbSizeLimitMb: number;
 }
 
@@ -40,10 +42,52 @@ export async function storageMaintenance(opts: MaintenanceOptions) {
     [opts.rawRetentionHours, opts.tracksRetentionDays, TRACKS_JOB],
   );
   const del = await pool.query(`DELETE FROM vessel_latest WHERE ts < now() - make_interval(days => $1)`, [opts.latestRetentionDays]);
-  const r = { ...rows[0]!, latest_pruned: del.rowCount ?? 0 };
-  if (r.raw_created || r.tracks_created || r.raw_dropped || r.tracks_dropped || r.latest_pruned) logger.info(r, 'storage maintenance');
+  const vessels = await pruneVessels(Math.max(opts.vesselsRetentionDays ?? 30, opts.latestRetentionDays, opts.tracksRetentionDays + 1));
+  const r = { ...rows[0]!, latest_pruned: del.rowCount ?? 0, vessels_pruned: vessels };
+  if (r.raw_created || r.tracks_created || r.raw_dropped || r.tracks_dropped || r.latest_pruned || r.vessels_pruned) logger.info(r, 'storage maintenance');
   await reindexBloated();
   await storageGuard(opts.dbSizeLimitMb);
+}
+
+/**
+ * Forgets ships not heard for `days` (name, type, size, destination): the list of every ship ever
+ * seen otherwise grows forever. Ships still on the live map are kept; a ship that is heard again
+ * is simply added back. Deletes in batches so the table is never locked for long.
+ */
+export async function pruneVessels(days: number): Promise<number> {
+  let total = 0;
+  for (;;) {
+    const { rowCount } = await pool.query(
+      `DELETE FROM vessels WHERE mmsi IN (
+         SELECT v.mmsi FROM vessels v
+         WHERE v.last_seen < now() - make_interval(days => $1)
+           AND NOT EXISTS (SELECT 1 FROM vessel_latest l WHERE l.mmsi = v.mmsi)
+         LIMIT 5000)`,
+      [days],
+    );
+    total += rowCount ?? 0;
+    if ((rowCount ?? 0) < 5000) return total;
+  }
+}
+
+/**
+ * Keep-alive for the Supabase free plan, which pauses a project after a week without database
+ * activity: records a write (job_state 'heartbeat:<who>') at start and then once a day, from
+ * the API and the ingestor alike, so the database sees activity even when no data is flowing
+ * (e.g. the AIS feed is down and nobody opens the map). Returns a stop function.
+ */
+export function startHeartbeat(who: string, everyMs = 24 * 3600_000) {
+  const beat = () =>
+    pool
+      .query(
+        `INSERT INTO job_state (name, value) VALUES ($1, now()) ON CONFLICT (name) DO UPDATE SET value = now()`,
+        [`heartbeat:${who}`],
+      )
+      .catch((err) => logger.warn({ err, who }, 'database heartbeat failed'));
+  void beat();
+  const t = setInterval(beat, everyMs);
+  t.unref();
+  return () => clearInterval(t);
 }
 
 /**
