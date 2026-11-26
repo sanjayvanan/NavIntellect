@@ -15,6 +15,8 @@ export interface PipelineOptions {
   alertCooldownMinutes: number;
   /** Store at most one history point per vessel per this many seconds (0 = keep all). */
   historySampleSeconds?: number;
+  /** Also store a point when a moving vessel turns this many degrees (0 = off). */
+  historyTurnDegrees?: number;
 }
 
 /** Batcher -> DB write -> Redis publish -> zone evaluation -> alert publish. */
@@ -25,7 +27,7 @@ export function createPipeline(opts: PipelineOptions) {
     logger.info({ count: alerts.length, types: alerts.map((a) => a.type) }, 'alerts raised');
   };
 
-  const sampler = new HistorySampler((opts.historySampleSeconds ?? 0) * 1000);
+  const sampler = new HistorySampler((opts.historySampleSeconds ?? 0) * 1000, opts.historyTurnDegrees ?? 0);
 
   const batcher = new Batcher({
     flushIntervalMs: opts.flushIntervalMs,

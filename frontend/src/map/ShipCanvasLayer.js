@@ -185,7 +185,11 @@ export const ShipCanvasLayer = L.Layer.extend({
       }
       singles = []
       for (const members of cells.values()) {
-        if (members.length === 1) {
+        // Zoomed out, the server sends one ship per small area with cell_count = ships it stands
+        // for, so bubbles count every ship, not only those sent (else "2" becomes "4" on zoom-in).
+        let count = 0
+        for (const m of members) count += m.ship.cell_count || 1
+        if (count === 1) {
           singles.push(members[0])
           continue
         }
@@ -195,7 +199,7 @@ export const ShipCanvasLayer = L.Layer.extend({
           sx += m.x
           sy += m.y
         }
-        clusters.push({ x: sx / members.length, y: sy / members.length, members })
+        clusters.push({ x: sx / members.length, y: sy / members.length, members, count })
       }
     }
 
@@ -213,7 +217,7 @@ export const ShipCanvasLayer = L.Layer.extend({
     ctx.textBaseline = 'middle'
     ctx.font = 'bold 11px system-ui, -apple-system, sans-serif'
     for (const c of clusters) {
-      const n = c.members.length
+      const n = c.count
       const style = CLUSTER_STYLES.find((s) => n < s.max)
       ctx.beginPath()
       ctx.arc(c.x, c.y, style.radius, 0, Math.PI * 2)
@@ -342,7 +346,7 @@ export const ShipCanvasLayer = L.Layer.extend({
     if (hit.ship) {
       this._tooltip.setLatLng([hit.ship.latitude, hit.ship.longitude]).setContent(hit.ship.track_name || `MMSI ${hit.ship.mmsi}`)
     } else {
-      const n = hit.cluster.members.length
+      const n = hit.cluster.count
       this._tooltip
         .setLatLng(this._map.containerPointToLatLng([hit.cluster.x, hit.cluster.y]))
         .setContent(`${n} ships · click to zoom in`)

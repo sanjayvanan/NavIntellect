@@ -1,6 +1,9 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit'
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'
+// Empty = the app's own address: in development Vite passes /api and /ws on to the backend
+// (vite.config.js), so the app also works when opened from a phone. Set VITE_API_BASE_URL when
+// the API is served from a different address.
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 
 // Applies the active type/speed/search filters to the full ship list.
 const applyFilters = (ships, filters) => {
@@ -114,7 +117,9 @@ export const shipSlice = createSlice({
           index.set(ship.mmsi, state.data.length)
           state.data.push(ship)
         } else {
-          state.data[i] = ship
+          // Live updates don't carry cell_count (zoomed-out cluster totals): keep the loaded one.
+          const count = state.data[i].cell_count
+          state.data[i] = count && ship.cell_count == null ? { ...ship, cell_count: count } : ship
           changed = true
         }
       }

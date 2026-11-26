@@ -37,6 +37,8 @@ const schema = z.object({
   DB_SIZE_LIMIT_MB: z.coerce.number().int().positive().default(500),
   /** History sampling: at most one stored point per vessel per N seconds (0 = keep every message). */
   POSITIONS_SAMPLE_SECONDS: z.coerce.number().int().min(0).default(120),
+  /** Also store a point when a moving ship's course changes this much (degrees; 0 = off). */
+  POSITIONS_TURN_DEGREES: z.coerce.number().min(0).max(180).default(20),
   REDIS_URL: z.string().default('redis://localhost:6379'),
 
   PORT: z.coerce.number().int().default(3000),

@@ -488,9 +488,50 @@
 
   .layer-control-panel {
     bottom: 66px;
-    left: 10px;
+    left: 8px;
+    right: 8px;
+    width: auto !important;
+    max-width: none !important;
     top: auto !important;
     max-height: calc(100vh - 140px) !important;
+    max-height: calc(100dvh - 140px) !important;
+  }
+
+  /* Bottom bar: too many buttons for a phone's width, so it scrolls sideways instead of cutting
+     the last ones (clustering, full screen, account) off. "Hide sidebar" is left out here. */
+  .sidebar {
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sidebar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sidebar > .sidebar-toggle,
+  .sidebar > .sidebar-toggle + .sidebar-divider {
+    display: none;
+  }
+
+  .sidebar-button,
+  .sidebar-avatar,
+  .sidebar-group {
+    flex: none;
+  }
+
+  .sidebar-spacer {
+    flex: 1 0 8px;
+  }
+
+  /* The AI button's open-panel bar, like the others: along the bottom edge. */
+  .sidebar .sidebar-button.ai.active::before {
+    inset: auto 9px -8px 9px;
+    width: auto;
+    height: 3px;
+    border-radius: 3px 3px 0 0;
   }
 }
 
@@ -640,4 +681,94 @@
   cursor: pointer;
   font-size: 12px;
   padding: 0;
+}
+
+/* AI copilot button: gradient spark that glows softly and twinkles, so AI reads as AI */
+.ai-spark {
+  overflow: visible;
+}
+
+.ai-spark-main,
+.ai-spark-small {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.sidebar-button.ai .ai-spark {
+  animation: ai-glow 3s ease-in-out infinite;
+}
+
+.sidebar-button.ai .ai-spark-small {
+  animation: ai-twinkle 3s ease-in-out infinite;
+}
+
+.sidebar-button.ai .ai-spark-main {
+  animation: ai-breathe 3s ease-in-out infinite;
+}
+
+.sidebar-button.ai:hover .ai-spark,
+.sidebar-button.ai.active .ai-spark {
+  animation-duration: 1.6s;
+}
+
+.sidebar-button.ai:hover .ai-spark-main,
+.sidebar-button.ai:hover .ai-spark-small {
+  animation-duration: 1.6s;
+}
+
+/* Soft halo behind the tile */
+.sidebar-button.ai::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(236, 72, 153, 0.22), rgba(139, 92, 246, 0.12) 55%, transparent 75%);
+  animation: ai-halo 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* The open panel keeps the usual accent bar instead of the halo */
+.sidebar-button.ai.active::before {
+  inset: 9px auto 9px -11px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(#8b5cf6, #ec4899, #3b82f6);
+  animation: none;
+}
+
+.sidebar-button.ai.active {
+  background: rgba(139, 92, 246, 0.12);
+}
+
+@keyframes ai-glow {
+  0%, 100% { filter: drop-shadow(0 0 1px rgba(139, 92, 246, 0.35)); }
+  50% { filter: drop-shadow(0 0 5px rgba(236, 72, 153, 0.75)); }
+}
+
+@keyframes ai-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+@keyframes ai-twinkle {
+  0%, 30%, 100% { transform: scale(1) rotate(0deg); opacity: 1; }
+  45% { transform: scale(0.55) rotate(45deg); opacity: 0.6; }
+  60% { transform: scale(1.2) rotate(90deg); opacity: 1; }
+}
+
+@keyframes ai-halo {
+  0%, 100% { opacity: 0.4; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-button.ai .ai-spark,
+  .sidebar-button.ai .ai-spark-main,
+  .sidebar-button.ai .ai-spark-small,
+  .sidebar-button.ai::before {
+    animation: none;
+  }
+  .sidebar-button.ai .ai-spark {
+    filter: drop-shadow(0 0 3px rgba(236, 72, 153, 0.55));
+  }
 }

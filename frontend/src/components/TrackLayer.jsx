@@ -9,6 +9,9 @@ const COLOR = '#f97316'
 const REFRESH_MS = 60_000
 const MAX_DOTS = 600 // hover dots along the line (the line itself keeps every point)
 
+/** "47 min" / "2 h 5 min" */
+const formatGap = (minutes) => (minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h${minutes % 60 ? ` ${minutes % 60} min` : ''}`)
+
 const formatTime = (ms) =>
   new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
@@ -41,10 +44,18 @@ function TrackLayer() {
     const group = L.layerGroup().addTo(map)
 
     const draw = (feature) => {
-      const { segments, points } = trackToLatLngs(feature)
+      const { segments, gaps, points } = trackToLatLngs(feature)
       group.clearLayers()
       if (!points.length) return 0
+      // Gaps in reception: a thin dashed straight line, since the real route there is unknown.
+      for (const g of gaps) {
+        L.polyline([g.from, g.to], { pane: 'track', renderer, color: darkRef.current ? '#111827' : '#ffffff', weight: 5, opacity: 0.55, dashArray: '8 8', lineCap: 'butt', interactive: false }).addTo(group)
+        L.polyline([g.from, g.to], { pane: 'track', renderer, color: COLOR, weight: 2.5, opacity: 0.9, dashArray: '8 8', lineCap: 'butt' })
+          .bindTooltip(`No position reports for ${formatGap(g.minutes)} · the real route here is unknown`, { sticky: true })
+          .addTo(group)
+      }
       for (const seg of segments) {
+        if (seg.length < 2) continue
         // White halo under the coloured line keeps it readable on any base map.
         L.polyline(seg, { pane: 'track', renderer, color: darkRef.current ? '#111827' : '#ffffff', weight: 6, opacity: 0.7, interactive: false }).addTo(group)
         L.polyline(seg, { pane: 'track', renderer, color: COLOR, weight: 3, opacity: 0.95, interactive: false }).addTo(group)
@@ -65,8 +76,12 @@ function TrackLayer() {
       // First draw only: bring the track into view if part of it is off screen.
       if (!fitted) {
         fitted = true
-        const bounds = L.latLngBounds(segments.flat())
-        if (bounds.isValid() && !map.getBounds().contains(bounds)) map.fitBounds(bounds, { padding: [60, 60], maxZoom: 13 })
+        const bounds = L.latLngBounds(points.map((p) => [p.lat, p.lng]))
+        if (bounds.isValid() && !map.getBounds().contains(bounds)) {
+          // Then let the ship popup move back into view (see ShipLayer: 'shippopup:fit').
+          map.once('moveend', () => map.fire('shippopup:fit'))
+          map.fitBounds(bounds, { padding: [60, 60], maxZoom: 13 })
+        }
       }
       return points.length
     }

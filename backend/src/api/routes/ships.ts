@@ -37,16 +37,20 @@ export async function shipRoutes(app: FastifyInstance, opts: { cache?: ShipCache
     }
     // Pick the ships on vessel_latest alone, then build the response columns only for those.
     let pick: string;
+    let extra = '';
     if (q.zoom !== undefined && q.zoom < FULL_DETAIL_ZOOM) {
       // One ship per grid cell: prefer recently heard, then moving, then newest.
       params.push(cellDegrees(q.zoom, q.density));
       const c = `$${params.length}::float8`;
       pick = `SELECT * FROM (
-                SELECT DISTINCT ON (floor(l.lon / ${c}), floor(l.lat / ${c})) l.mmsi, l.ts
+                SELECT DISTINCT ON (floor(l.lon / ${c}), floor(l.lat / ${c})) l.mmsi, l.ts,
+                       count(*) OVER (PARTITION BY floor(l.lon / ${c}), floor(l.lat / ${c}))::int AS cell_count
                 FROM vessel_latest l WHERE ${where}
                 ORDER BY floor(l.lon / ${c}), floor(l.lat / ${c}),
                          (l.ts > now() - interval '30 minutes') DESC, (COALESCE(l.sog, 0) >= 1) DESC, l.ts DESC
               ) cells`;
+      // How many ships each one stands for (map clusters show true totals); null when just itself.
+      extra = ', NULLIF(s.cell_count, 1) AS cell_count';
     } else {
       pick = `SELECT l.mmsi, l.ts FROM vessel_latest l WHERE ${where}`;
     }
@@ -55,7 +59,7 @@ export async function shipRoutes(app: FastifyInstance, opts: { cache?: ShipCache
       pick = `SELECT * FROM (${pick}) p ORDER BY ts DESC LIMIT $${params.length}`;
     }
     const { rows } = await pool.query<LegacyShip>(
-      `SELECT ${LEGACY_SHIP_COLUMNS}
+      `SELECT ${LEGACY_SHIP_COLUMNS}${extra}
        FROM (${pick}) s JOIN vessel_latest l USING (mmsi) JOIN vessels v USING (mmsi)`,
       params,
     );

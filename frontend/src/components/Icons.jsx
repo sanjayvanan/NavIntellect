@@ -1,4 +1,6 @@
 /* eslint-disable react/prop-types -- tiny presentational icons */
+import { useId } from 'react'
+
 // One consistent line-icon set (24px grid, 1.8 stroke, currentColor) for all map chrome.
 const Svg = ({ children, size = 20 }) => (
   <svg
@@ -128,11 +130,34 @@ export const ExitFullscreenIcon = (p) => (
   </Svg>
 )
 
-export const SparkleIcon = (p) => (
-  // AI copilot: a four-point spark with a small companion
+/**
+ * The AI mark: the copilot spark filled with a violet → pink → blue gradient. The parts carry
+ * classes so CSS can make it glow and twinkle (see .ai-spark in Sidebar.css).
+ */
+export const AiSparkIcon = ({ size = 20 }) => {
+  const id = useId().replace(/:/g, '')
+  return (
+    <svg className="ai-spark" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+      <defs>
+        <linearGradient id={`ai-g-${id}`} x1="3" y1="3" x2="21" y2="20" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#8b5cf6" />
+          <stop offset="0.55" stopColor="#ec4899" />
+          <stop offset="1" stopColor="#3b82f6" />
+        </linearGradient>
+      </defs>
+      <g fill={`url(#ai-g-${id})`}>
+        <path className="ai-spark-main" d="M10 2.5c.5 3.6 2.4 5.6 6.4 6.6-4 1-5.9 3-6.4 6.6-.5-3.6-2.4-5.6-6.4-6.6 4-1 5.9-3 6.4-6.6z" />
+        <path className="ai-spark-small" d="M18 13.5c.3 1.8 1.1 2.7 3 3.2-1.9.5-2.7 1.4-3 3.2-.3-1.8-1.1-2.7-3-3.2 1.9-.5 2.7-1.4 3-3.2z" />
+      </g>
+    </svg>
+  )
+}
+
+export const ChatsIcon = (p) => (
+  // saved chats: two speech bubbles
   <Svg {...p}>
-    <path d="M10 3l1.8 4.7L16.5 9.5l-4.7 1.8L10 16l-1.8-4.7L3.5 9.5l4.7-1.8z" />
-    <path d="M18 14l.8 2.2 2.2.8-2.2.8L18 20l-.8-2.2-2.2-.8 2.2-.8z" />
+    <path d="M14 9V5.5A1.5 1.5 0 0 0 12.5 4h-7A1.5 1.5 0 0 0 4 5.5V14l3-3h2" />
+    <path d="M10 10.5A1.5 1.5 0 0 1 11.5 9h7a1.5 1.5 0 0 1 1.5 1.5V20l-3-3h-5.5a1.5 1.5 0 0 1-1.5-1.5z" />
   </Svg>
 )
 

@@ -115,15 +115,20 @@ export class ShipCache {
     }
     if (q.zoom !== undefined && q.zoom < FULL_DETAIL_ZOOM) {
       const c = cellDegrees(q.zoom, q.density);
-      const cells = new Map<string, LegacyShip>();
+      const cells = new Map<string, { ship: LegacyShip; count: number }>();
       for (const s of out) {
         const key = `${Math.floor(s.longitude / c)}:${Math.floor(s.latitude / c)}`;
         const cur = cells.get(key);
-        if (!cur || rank(s, now) > rank(cur, now) || (rank(s, now) === rank(cur, now) && s.sensor_timestamp > cur.sensor_timestamp)) {
-          cells.set(key, s);
+        if (!cur) cells.set(key, { ship: s, count: 1 });
+        else {
+          cur.count++;
+          if (rank(s, now) > rank(cur.ship, now) || (rank(s, now) === rank(cur.ship, now) && s.sensor_timestamp > cur.ship.sensor_timestamp)) {
+            cur.ship = s;
+          }
         }
       }
-      out = [...cells.values()];
+      // cell_count: how many ships this one stands for, so map clusters can show true totals.
+      out = [...cells.values()].map(({ ship, count }) => (count > 1 ? { ...ship, cell_count: count } : ship));
     }
     if (q.limit && out.length > q.limit) {
       out.sort((a, b) => b.sensor_timestamp - a.sensor_timestamp);

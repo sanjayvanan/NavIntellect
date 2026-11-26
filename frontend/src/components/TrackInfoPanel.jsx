@@ -9,6 +9,7 @@ import { OBJECT_TYPES, objectTypeOf } from '../features/mapObjects'
 import { timeAgo } from '../utils/alertText'
 import { CloseIcon, SearchIcon } from './Icons'
 import './TrackInfoPanel.css'
+import { isPhoneLayout } from '../utils/alertText'
 
 const PAGE = 50
 const DEBOUNCE_MS = 250
@@ -135,6 +136,7 @@ function TrackInfoPanel({ style, theme, onClose }) {
     if (ship.latitude == null || ship.longitude == null) return
     dispatch(upsertShips([ship])) // make sure it is on the map even if outside the loaded area
     window.handleShipSelect?.(ship)
+    if (isPhoneLayout()) onClose() // on a phone the panel would hide the ship and its popup
   }
 
   const zoomToZone = () => {

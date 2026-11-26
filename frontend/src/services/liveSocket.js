@@ -15,7 +15,7 @@ export function connectLiveSocket({ onVessels, onAlert, getToken, refreshToken, 
   let anonymous = false
   let lastToken = null
   const buildUrl = () => {
-    const url = new URL('/ws', API_BASE_URL.replace(/^http/, 'ws'))
+    const url = new URL('/ws', (API_BASE_URL || window.location.origin).replace(/^http/, 'ws'))
     lastToken = anonymous ? null : (getToken?.() ?? null)
     if (lastToken) url.searchParams.set('token', lastToken)
     return url

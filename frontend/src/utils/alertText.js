@@ -46,3 +46,6 @@ export function timeAgo(when, now = Date.now()) {
 
 /** Opens the ship an alert is about (selects it, or goes to where it was reported): see ShipLayer. */
 export const focusAlert = (a) => window.handleShipFocus?.(a.mmsi, a.latitude, a.longitude)
+
+/** Phone layout (the sidebar is a bottom bar and panels cover most of the map). */
+export const isPhoneLayout = () => window.matchMedia?.('(max-width: 768px)').matches ?? false

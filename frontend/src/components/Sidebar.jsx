@@ -16,7 +16,7 @@ import {
   RouteIcon,
   SettingsIcon,
   ShapesIcon,
-  SparkleIcon,
+  AiSparkIcon,
 } from './Icons'
 import { useMap } from 'react-leaflet'
 import L from 'leaflet'
@@ -36,7 +36,7 @@ const PANELS = new Set(['copilot', 'mapType', 'objects', 'settings', 'notificati
 const TALL_PANELS = new Set(['copilot', 'objects', 'notifications', 'trackInfo'])
 
 const sidebarButtons = [
-  { id: 'copilot', Icon: SparkleIcon, label: 'AI copilot' },
+  { id: 'copilot', Icon: AiSparkIcon, label: 'AI copilot' },
   { id: 'mapType', Icon: LayersIcon, label: 'Map layers' },
   { id: 'objects', Icon: ShapesIcon, label: 'Graphical objects' },
   { id: 'settings', Icon: SettingsIcon, label: 'Settings' },
@@ -155,7 +155,7 @@ function Sidebar({ rail, fullscreen }) {
             return (
               <button
                 key={id}
-                className={`sidebar-button ${isActive(id) ? 'active' : ''}`}
+                className={`sidebar-button ${id === 'copilot' ? 'ai' : ''} ${isActive(id) ? 'active' : ''}`}
                 onClick={(e) => handleSidebarClick(id, e)}
                 data-label={fullLabel}
                 aria-label={fullLabel}

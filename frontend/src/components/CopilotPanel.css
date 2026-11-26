@@ -32,20 +32,139 @@
   gap: 4px;
 }
 
-.cp-clear {
-  padding: 3px 8px;
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
+.cp-icon-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
   background: transparent;
   color: var(--panel-muted);
-  font: inherit;
-  font-size: 12px;
   cursor: pointer;
 }
 
-.cp-clear:hover {
+.cp-icon-btn:hover:not(:disabled),
+.cp-icon-btn.on {
+  color: var(--cp-accent);
+  background: var(--cp-accent-soft);
+}
+
+.cp-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.cp-count {
+  position: absolute;
+  top: -2px;
+  right: -3px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: var(--cp-accent);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+
+.copilot-panel.dark .cp-count {
+  color: #1b1030;
+}
+
+/* Saved chats list */
+.cp-history {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cp-history li {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--panel-border);
+  border-radius: 9px;
+}
+
+.cp-history li.active {
+  border-color: var(--cp-accent);
+  background: var(--cp-accent-soft);
+}
+
+.cp-history-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
   color: var(--panel-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cp-history li:hover:not(.active) {
   background: var(--panel-hover);
+}
+
+.cp-history-title {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cp-history-open small {
+  color: var(--panel-muted);
+  font-size: 11px;
+}
+
+.cp-history-delete {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--panel-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.cp-history li:hover .cp-history-delete,
+.cp-history-delete:focus-visible {
+  opacity: 1;
+}
+
+.cp-history-delete:hover {
+  color: #e53935;
+  background: rgba(229, 57, 53, 0.1);
+}
+
+@media (hover: none) {
+  .cp-history-delete { opacity: 1; }
+}
+
+.cp-history-empty {
+  margin: 12px 0;
+  color: var(--panel-muted);
+  font-size: 13px;
+  text-align: center;
 }
 
 .cp-messages {

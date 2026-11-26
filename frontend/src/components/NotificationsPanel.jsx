@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import L from 'leaflet'
 import { fetchAlerts, notificationsPanelToggled } from '../store/alertsSlice'
-import { ALERT_ICONS, describeAlert, focusAlert, timeAgo } from '../utils/alertText'
+import { ALERT_ICONS, describeAlert, focusAlert, isPhoneLayout, timeAgo } from '../utils/alertText'
 import { CloseIcon } from './Icons'
 import './Notifications.css'
 
@@ -66,7 +66,10 @@ function NotificationsPanel({ style, theme, onClose }) {
                 <button
                   type="button"
                   className={`notif-item sev-${a.severity} ${unread ? 'unread' : ''}`}
-                  onClick={() => focusAlert(a)}
+                  onClick={() => {
+                    focusAlert(a)
+                    if (isPhoneLayout()) onClose() // on a phone the panel would hide the ship
+                  }}
                   title="Show this ship on the map"
                 >
                   <span className="alert-icon" aria-hidden="true">{ALERT_ICONS[a.type] || '!'}</span>

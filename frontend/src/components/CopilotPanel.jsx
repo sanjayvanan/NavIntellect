@@ -3,11 +3,12 @@ import { useEffect, useRef, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { useMap } from 'react-leaflet'
 import L from 'leaflet'
-import { askCopilot, clearConversation, linkShips, loadCopilotStatus, requestShipList } from '../store/copilotSlice'
+import { askCopilot, clearConversation, deleteChat, linkShips, loadCopilotStatus, openChat, requestShipList } from '../store/copilotSlice'
+import { timeAgo } from '../utils/alertText'
 import { showTrack } from '../store/shipSlice'
 import { zoomToPoint } from '../map/navigation'
 import { boundsToBbox } from '../utils/mapBbox'
-import { CloseIcon, SendIcon, SparkleIcon } from './Icons'
+import { AiSparkIcon, ChatsIcon, CloseIcon, PlusIcon, SendIcon } from './Icons'
 import './CopilotPanel.css'
 
 const SUGGESTIONS = [
@@ -56,6 +57,30 @@ function useMapActions() {
   }
 }
 
+/** List of saved chats: open one to carry on with it, or delete it. */
+function ChatList({ chats, activeChatId, busy, onOpen, onDelete }) {
+  if (!chats.length) return <p className="cp-history-empty">No saved chats yet. Your chats appear here after the first question.</p>
+  const sorted = [...chats].sort((a, b) => b.updatedAt - a.updatedAt)
+  return (
+    <ul className="cp-history">
+      {sorted.map((c) => (
+        <li key={c.id} className={c.id === activeChatId ? 'active' : ''}>
+          <button type="button" className="cp-history-open" onClick={() => onOpen(c.id)} disabled={busy}>
+            <span className="cp-history-title">{c.title}</span>
+            <small>
+              {Math.ceil(c.messages.length / 2)} question{c.messages.length > 2 ? 's' : ''} · {timeAgo(c.updatedAt)}
+              {c.id === activeChatId ? ' · open' : ''}
+            </small>
+          </button>
+          <button type="button" className="cp-history-delete" onClick={() => onDelete(c.id)} disabled={busy && c.id === activeChatId} aria-label={`Delete chat: ${c.title}`} title="Delete chat">
+            <CloseIcon size={14} />
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 function Answer({ message, onShip }) {
   const parts = linkShips(message.text, message.ships)
   return (
@@ -82,7 +107,8 @@ function CopilotPanel({ style, theme, onClose }) {
   const dispatch = useDispatch()
   const map = useMap()
   const runAction = useMapActions()
-  const { enabled, usage, messages, busy, model } = useSelector((state) => state.copilot)
+  const { enabled, usage, messages, busy, model, chats, activeChatId } = useSelector((state) => state.copilot)
+  const [showChats, setShowChats] = useState(false)
   const selected = useSelector((state) => state.ships.selectedShip)
   const [text, setText] = useState('')
   const ref = useRef(null)
@@ -103,6 +129,7 @@ function CopilotPanel({ style, theme, onClose }) {
     for (const m of messages) {
       if (handledRef.current.has(m.id)) continue
       handledRef.current.add(m.id)
+      if (m.old) continue // from a saved chat: its actions ran back then
       m.actions?.forEach(runAction)
     }
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
@@ -131,13 +158,37 @@ function CopilotPanel({ style, theme, onClose }) {
     <div ref={ref} className={`layer-control-panel copilot-panel ${theme}`} style={style}>
       <div className="panel-header">
         <span className="cp-title">
-          <SparkleIcon size={16} /> AI copilot
+          <AiSparkIcon size={18} /> AI copilot
         </span>
         <span className="cp-header-actions">
-          {messages.length > 0 && (
-            <button type="button" className="cp-clear" onClick={() => dispatch(clearConversation())}>
-              New chat
-            </button>
+          {enabled !== false && (
+            <>
+              <button
+                type="button"
+                className={`cp-icon-btn ${showChats ? 'on' : ''}`}
+                onClick={() => setShowChats((v) => !v)}
+                aria-pressed={showChats}
+                aria-label="Saved chats"
+                title="Saved chats"
+              >
+                <ChatsIcon size={16} />
+                {chats.length > 0 && <span className="cp-count">{chats.length}</span>}
+              </button>
+              <button
+                type="button"
+                className="cp-icon-btn"
+                onClick={() => {
+                  dispatch(clearConversation())
+                  setShowChats(false)
+                  inputRef.current?.focus()
+                }}
+                disabled={busy || (messages.length === 0 && !showChats)}
+                aria-label="New chat"
+                title="New chat (this one stays in Saved chats)"
+              >
+                <PlusIcon size={16} />
+              </button>
+            </>
           )}
           <button className="panel-close" onClick={onClose} aria-label="Close">
             <CloseIcon size={16} />
@@ -151,6 +202,19 @@ function CopilotPanel({ style, theme, onClose }) {
           <small>
             Add a free Gemini key as <code>GEMINI_API_KEY</code> in <code>backend/.env</code> and restart the backend.
           </small>
+        </div>
+      ) : showChats ? (
+        <div className="cp-messages">
+          <ChatList
+            chats={chats}
+            activeChatId={activeChatId}
+            busy={busy}
+            onOpen={(id) => {
+              dispatch(openChat(id))
+              setShowChats(false)
+            }}
+            onDelete={(id) => dispatch(deleteChat(id))}
+          />
         </div>
       ) : (
         <>

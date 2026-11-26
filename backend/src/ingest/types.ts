@@ -37,6 +37,8 @@ export type AisMsg = PositionMsg | StaticMsg;
 
 /** Shape served by the legacy `/api/ships/trackList` endpoint and pushed over the WebSocket. */
 export interface LegacyShip {
+  /** Map level-of-detail only: how many ships in its grid cell this one stands for (absent = 1). */
+  cell_count?: number | null;
   uuid: string;
   mmsi: number;
   track_name: string;

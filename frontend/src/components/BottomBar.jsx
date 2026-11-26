@@ -22,7 +22,7 @@ function BottomBar() {
       
       // ist Time
       const istString = now.toLocaleString('en-US', {
-        timeZone: 'IST',
+        timeZone: 'Asia/Kolkata', // full IANA name: Safari rejects abbreviations like 'IST' and throws
         day: '2-digit',
         month: 'short',
         year: 'numeric',

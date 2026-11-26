@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { HistorySampler } from '../src/ingest/sampler.js';
+import { courseChange, HistorySampler } from '../src/ingest/sampler.js';
 import type { PositionMsg } from '../src/ingest/types.js';
 
 const pos = (mmsi: number, sec: number) => ({ kind: 'position', mmsi, ts: new Date(sec * 1000) }) as PositionMsg;
+const move = (sec: number, cog: number, sog = 8) => ({ kind: 'position', mmsi: 1, ts: new Date(sec * 1000), cog, sog }) as PositionMsg;
 const secs = (ps: PositionMsg[]) => ps.map((p) => [p.mmsi, p.ts.getTime() / 1000]);
 
 describe('HistorySampler', () => {
@@ -30,5 +31,21 @@ describe('HistorySampler', () => {
   it('keeps everything when the interval is 0', () => {
     const s = new HistorySampler(0);
     expect(s.select([pos(1, 0), pos(1, 1)])).toHaveLength(2);
+  });
+
+  it('also keeps a point when a moving ship turns, so bends are not cut short', () => {
+    const s = new HistorySampler(120_000, 20);
+    const kept = s.select([
+      move(0, 90),
+      move(30, 95), // small change: dropped
+      move(60, 130), // turned 40°: kept
+      move(70, 170), // turned again, but only 10 s later: dropped
+      move(100, 175), // 45° since the last kept point: kept
+      move(130, 300, 0.3), // course of a drifting ship: ignored
+      move(220, 176), // the normal 2-minute point
+    ]);
+    expect(secs(kept)).toEqual([[1, 0], [1, 60], [1, 100], [1, 220]]);
+    expect(courseChange(350, 10)).toBe(20);
+    expect(courseChange(10, 190)).toBe(180);
   });
 });

@@ -86,9 +86,9 @@ describe('alerts', () => {
 
 describe('track history', () => {
   it('turns the track Feature into Leaflet lines and timed points', () => {
-    expect(trackToLatLngs({ geometry: null, properties: {} })).toEqual({ segments: [], points: [] })
+    expect(trackToLatLngs({ geometry: null, properties: {} })).toEqual({ segments: [], gaps: [], points: [] })
     expect(trackToLatLngs({ geometry: { type: 'Point', coordinates: [72.8, 18.9] }, properties: { times: [5] } })).toEqual({
-      segments: [[[18.9, 72.8]]], points: [{ lat: 18.9, lng: 72.8, time: 5 }],
+      segments: [[[18.9, 72.8]]], gaps: [], points: [{ lat: 18.9, lng: 72.8, time: 5 }],
     })
     const line = trackToLatLngs({
       geometry: { type: 'LineString', coordinates: [[72.8, 18.9], [72.9, 19.0]] },
@@ -108,6 +108,17 @@ describe('track history', () => {
     expect(thinned.points).toHaveLength(5000)
     expect(thinned.points[0].lng).toBe(0)
     expect(thinned.points[4999].lng).toBe(11.999) // keeps the latest position
+  })
+
+  it('marks gaps in reception, where the straight line is only a guess', () => {
+    const min = 60_000
+    const t = trackToLatLngs({
+      geometry: { type: 'LineString', coordinates: [[100.50, 13.60], [100.51, 13.61], [100.55, 13.80], [100.55, 13.80], [100.551, 13.80]] },
+      properties: { times: [0, 2 * min, 49 * min, 70 * min, 71 * min] },
+    })
+    // 47 min and ~11 nm between the 2nd and 3rd point: a gap. 21 min standing still: not one.
+    expect(t.gaps).toEqual([{ from: [13.61, 100.51], to: [13.80, 100.55], minutes: 47 }])
+    expect(t.segments).toEqual([[[13.60, 100.50], [13.61, 100.51]], [[13.80, 100.55], [13.80, 100.55], [13.80, 100.551]]])
   })
 
   it('shows the track for the selected ship only', () => {

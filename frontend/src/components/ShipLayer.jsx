@@ -70,11 +70,94 @@ const TrackHistoryRow = ({ ship, track, onShow, onHide }) => {
   )
 }
 
+/**
+ * Lets the user drag a ship popup by its header, e.g. off the ship to see what is under it.
+ * The popup stays attached to the ship at the dragged offset (it keeps following the live
+ * position and the map), and a dashed line joins it to the ship. Double-click the header to
+ * put it back. Returns a cleanup function.
+ */
+function makePopupDraggable(map, popup, contentEl) {
+  const base = L.point(popup.options.offset)
+  let drag = null
+  const line = L.polyline([], { className: 'ship-popup-leader', interactive: false, weight: 1.5, dashArray: '4 4' })
+
+  const offset = () => L.point(popup.options.offset).subtract(base)
+
+  // Line from the ship to the nearest point of the popup box (in layer pixels, then back to lat/lng).
+  const drawLine = () => {
+    const container = popup.getElement()
+    if (!container || !map.hasLayer(popup)) return
+    if (offset().distanceTo(L.point(0, 0)) < 1) {
+      line.remove()
+      return
+    }
+    const ship = map.latLngToLayerPoint(popup.getLatLng())
+    const anchor = ship.add(L.point(popup.options.offset)) // bottom centre of the popup
+    const w = container.offsetWidth
+    const h = container.offsetHeight
+    const nearest = L.point(
+      Math.min(Math.max(ship.x, anchor.x - w / 2), anchor.x + w / 2),
+      Math.min(Math.max(ship.y, anchor.y - h), anchor.y),
+    )
+    line.setLatLngs([popup.getLatLng(), map.layerPointToLatLng(nearest)])
+    if (!map.hasLayer(line)) line.addTo(map)
+  }
+
+  const setOffset = (p) => {
+    popup.options.offset = [p.x, p.y]
+    popup.update()
+    popup.getElement()?.classList.toggle('ship-popup-moved', offset().distanceTo(L.point(0, 0)) >= 1)
+    drawLine()
+  }
+
+  const onDown = (e) => {
+    const header = e.target.closest?.('.ship-header')
+    if (!header || e.button > 0 || e.target.closest('button, a, input')) return
+    e.preventDefault()
+    header.setPointerCapture?.(e.pointerId)
+    drag = { header, start: L.point(e.clientX, e.clientY), from: L.point(popup.options.offset) }
+    popup.getElement()?.classList.add('ship-popup-dragging')
+  }
+  const onMove = (e) => {
+    if (!drag) return
+    setOffset(drag.from.add(L.point(e.clientX, e.clientY).subtract(drag.start)))
+  }
+  const onUp = (e) => {
+    if (!drag) return
+    drag.header.releasePointerCapture?.(e.pointerId)
+    drag = null
+    popup.getElement()?.classList.remove('ship-popup-dragging')
+  }
+  const onDblClick = (e) => {
+    if (e.target.closest?.('.ship-header')) setOffset(base)
+  }
+
+  contentEl.addEventListener('pointerdown', onDown)
+  contentEl.addEventListener('pointermove', onMove)
+  contentEl.addEventListener('pointerup', onUp)
+  contentEl.addEventListener('pointercancel', onUp)
+  contentEl.addEventListener('dblclick', onDblClick)
+  map.on('zoomend viewreset', drawLine)
+  popup.on('moved', drawLine)
+  popup.on('remove', () => line.remove())
+
+  return () => {
+    contentEl.removeEventListener('pointerdown', onDown)
+    contentEl.removeEventListener('pointermove', onMove)
+    contentEl.removeEventListener('pointerup', onUp)
+    contentEl.removeEventListener('pointercancel', onUp)
+    contentEl.removeEventListener('dblclick', onDblClick)
+    map.off('zoomend viewreset', drawLine)
+    popup.off('moved', drawLine)
+    line.remove()
+  }
+}
+
 /** Popup body for a ship (plain render function, rendered into the Leaflet popup via a portal). */
 const renderShipPopup = (ship, theme, trackRow) => {
   return (
     <div className={`ship-popup ${theme}`}>
-      <div className="ship-header">
+      <div className="ship-header" title="Drag to move · double-click to put back">
         <div className="ship-title">
           <h3>{ship.track_name}</h3>
           <span className="ship-type">{ship.type || 'Vessel'}</span>
@@ -316,8 +399,32 @@ function ShipLayer() {
     }
     popup.on('remove', onRemove)
     popupRef.current = popup
+    const stopDragging = makePopupDraggable(map, popup, popupEl)
+    // Bring the whole popup into view once when it opens (Leaflet's autoPan is off because it
+    // would pan again on every live update). Runs after React has filled the popup and again when
+    // a zoom to the ship (search, copilot, notifications) finishes.
+    const fitPopup = () => {
+      const box = popup.getElement()?.getBoundingClientRect()
+      const view = map.getContainer().getBoundingClientRect()
+      if (!box || !map.hasLayer(popup)) return
+      const pad = 16
+      const top = 72 // the search box floats over the top of the map
+      const dx = box.left < view.left + pad ? box.left - view.left - pad : box.right > view.right - pad ? box.right - view.right + pad : 0
+      const dy = box.top < view.top + top ? box.top - view.top - top : box.bottom > view.bottom - pad ? box.bottom - view.bottom + pad : 0
+      if (dx || dy) map.panBy([dx, dy])
+    }
+    const frame = requestAnimationFrame(fitPopup)
+    const fitAfterMove = () => requestAnimationFrame(fitPopup) // no-op once the popup is in view
+    map.on('moveend', fitAfterMove)
+    map.on('shippopup:fit', fitAfterMove) // e.g. after the map zooms out to show the ship's track
+    const stopFitting = setTimeout(() => map.off('moveend', fitAfterMove), 3000)
     return () => {
       closingOurselves = true
+      cancelAnimationFrame(frame)
+      clearTimeout(stopFitting)
+      map.off('moveend', fitAfterMove)
+      map.off('shippopup:fit', fitAfterMove)
+      stopDragging()
       popup.off('remove', onRemove)
       map.closePopup(popup)
       popupRef.current = null
@@ -328,6 +435,7 @@ function ShipLayer() {
     if (!popupRef.current || liveSelected?.latitude == null) return
     popupRef.current.setLatLng([liveSelected.latitude, liveSelected.longitude])
     popupRef.current.update()
+    popupRef.current.fire('moved') // keeps the leader line of a dragged popup on the ship
   }, [liveSelected])
 
   return (

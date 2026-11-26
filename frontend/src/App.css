@@ -3,6 +3,7 @@
   padding: 0;
   margin: 0;
   height: 100vh;
+  height: 100dvh; /* phones: the visible height, without the browser's address/tool bars */
   width: 100vw;
   display: flex; /* sidebar rail | map */
   overflow: hidden;
@@ -259,7 +260,7 @@
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .zoom-control-minimal {
-    bottom: 14px;
+    bottom: 44px; /* clear of the map credits button */
   }
   
   .theme-toggle-container {
@@ -481,3 +482,29 @@
 .detail-value.timestamp.stale {
   color: #ff6b6b;
 } */
+
+/* Ship popup can be dragged by its header (see makePopupDraggable in ShipLayer.jsx) */
+.ship-popup .ship-header {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.ship-popup-dragging .ship-popup .ship-header {
+  cursor: grabbing;
+}
+
+.ship-popup-dragging .leaflet-popup-content-wrapper {
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.28);
+}
+
+/* No fade while dragging: the popup must follow the pointer exactly */
+.ship-popup-dragging.leaflet-fade-anim,
+.leaflet-fade-anim .ship-popup-dragging {
+  transition: none;
+}
+
+.ship-popup-leader {
+  stroke: #1e88e5;
+  opacity: 0.8;
+}
