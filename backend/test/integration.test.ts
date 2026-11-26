@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { hashPassword } from '../src/api/auth/password.js';
 import { buildServer } from '../src/api/server.js';
-import { compactTracks, storageGuard, tracksWatermark } from '../src/db/maintenance.js';
+import { compactTracks, reindexBloated, storageGuard, tracksWatermark } from '../src/db/maintenance.js';
 import { pool } from '../src/db/pool.js';
 import { normalize } from '../src/ingest/normalize.js';
 import { createPipeline } from '../src/ingest/pipeline.js';
@@ -204,6 +204,17 @@ describe('vessels and tracks', () => {
     const elsewhere = (await app.inject({ url: `/api/tracks/area?bbox=-50,-50,-49,-49&from=${minsAgo(360).toISOString()}` })).json();
     expect(elsewhere.vessels).toEqual([]);
     expect((await app.inject({ url: '/api/tracks/area?bbox=170,0,-170,10' })).statusCode).toBe(400);
+  });
+
+  it('rebuilds bloated live-position indexes, and leaves normal ones alone', async () => {
+    expect(await reindexBloated()).toEqual([]); // small test table: nothing to do
+    // Thresholds at zero: every hot index counts as bloated and is rebuilt, still valid afterwards.
+    expect((await reindexBloated({ ratio: 0, minMb: 0 })).sort()).toEqual(['vessel_latest_geom', 'vessel_latest_pkey', 'vessel_latest_ts']);
+    const { rows } = await pool.query(
+      `SELECT count(*)::int AS n FROM pg_index x JOIN pg_class i ON i.oid = x.indexrelid
+       WHERE x.indrelid = 'vessel_latest'::regclass AND x.indisvalid`,
+    );
+    expect(rows[0].n).toBeGreaterThanOrEqual(3);
   });
 
   it('storage guard drops the oldest track day but never the last one', async () => {

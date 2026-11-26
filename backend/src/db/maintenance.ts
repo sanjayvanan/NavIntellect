@@ -42,7 +42,63 @@ export async function storageMaintenance(opts: MaintenanceOptions) {
   const del = await pool.query(`DELETE FROM vessel_latest WHERE ts < now() - make_interval(days => $1)`, [opts.latestRetentionDays]);
   const r = { ...rows[0]!, latest_pruned: del.rowCount ?? 0 };
   if (r.raw_created || r.tracks_created || r.raw_dropped || r.tracks_dropped || r.latest_pruned) logger.info(r, 'storage maintenance');
+  await reindexBloated();
   await storageGuard(opts.dbSizeLimitMb);
+}
+
+/**
+ * Indexes on vessel_latest, which is rewritten for every position report (each ship's row
+ * thousands of times a day). The `ts` index suffers most: every update moves the ship's entry to
+ * the newest end, and the half-empty pages left behind are not fully reused, so it grows to
+ * ~1 KB per ship (measured: 55 MB for 48k ships, against ~2 MB when rebuilt).
+ */
+const HOT_INDEXES = ['vessel_latest_ts', 'vessel_latest_geom', 'vessel_latest_pkey'];
+/** Rebuild when an index is this many times its table's data and above BLOAT_MIN_MB. */
+const BLOAT_RATIO = 3;
+const BLOAT_MIN_MB = 8;
+const REINDEX_LOCK = 4_242_001; // advisory lock: one rebuild at a time across all servers
+
+/**
+ * Rebuilds bloated vessel_latest indexes with REINDEX CONCURRENTLY: reads and writes carry on
+ * while it runs. If another server (or an earlier run) holds the lock, it skips this round.
+ * Returns the names of the indexes rebuilt.
+ */
+export async function reindexBloated(opts: { ratio?: number; minMb?: number } = {}): Promise<string[]> {
+  const ratio = opts.ratio ?? BLOAT_RATIO;
+  const minBytes = (opts.minMb ?? BLOAT_MIN_MB) * 1024 * 1024;
+  const client = await pool.connect();
+  const rebuilt: string[] = [];
+  try {
+    const { rows: lock } = await client.query<{ ok: boolean }>(`SELECT pg_try_advisory_lock($1) AS ok`, [REINDEX_LOCK]);
+    if (!lock[0]!.ok) return rebuilt;
+    try {
+      const { rows } = await client.query<{ name: string; size: string; heap: string }>(
+        `SELECT i.relname AS name, pg_relation_size(i.oid)::text AS size, pg_relation_size(x.indrelid)::text AS heap
+         FROM pg_index x JOIN pg_class i ON i.oid = x.indexrelid
+         WHERE x.indrelid = 'vessel_latest'::regclass AND i.relname = ANY($1)`,
+        [HOT_INDEXES],
+      );
+      for (const r of rows) {
+        const size = Number(r.size);
+        if (size < minBytes || size < Number(r.heap) * ratio) continue;
+        const t0 = Date.now();
+        await client.query(`REINDEX INDEX CONCURRENTLY ${quoteIndex(r.name)}`);
+        const { rows: after } = await client.query<{ size: string }>(`SELECT pg_relation_size($1::regclass)::text AS size`, [r.name]);
+        logger.info({ index: r.name, beforeMb: +(size / 1048576).toFixed(1), afterMb: +(Number(after[0]!.size) / 1048576).toFixed(1), ms: Date.now() - t0 }, 'rebuilt bloated index');
+        rebuilt.push(r.name);
+      }
+    } finally {
+      await client.query(`SELECT pg_advisory_unlock($1)`, [REINDEX_LOCK]);
+    }
+  } finally {
+    client.release();
+  }
+  return rebuilt;
+}
+
+function quoteIndex(name: string) {
+  if (!HOT_INDEXES.includes(name)) throw new Error(`unexpected index ${name}`);
+  return `"${name}"`;
 }
 
 /**

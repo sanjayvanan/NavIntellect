@@ -13,7 +13,11 @@ export const DEFAULT_DENSITY = 16;
 /** Grid cell size in degrees for a zoom level and density (cells per 256 px tile side). */
 export const cellDegrees = (zoom: number, density = DEFAULT_DENSITY) => 360 / (2 ** Math.floor(zoom) * density);
 
-const RESYNC_MS = 5 * 60_000;
+// Live updates arrive over Redis, so a full reload from the database (~13 MB for 48k ships) is
+// only a safety net: at start, after Redis reconnects (updates may have been missed) and once a
+// day. Every 5 minutes was ~3.7 GB/day of database egress, most of Supabase's free 5 GB a month.
+const TICK_MS = 5 * 60_000; // retry a failed first load; drop ships older than MAX_AGE_MS
+const RESYNC_MS = 24 * 3600_000;
 const RECENT_MS = 30 * 60_000;
 const MAX_AGE_MS = 30 * 86_400_000; // trackList accepts hours <= 720
 
@@ -44,6 +48,7 @@ export class ShipCache {
   private ships = new Map<number, LegacyShip>();
   private timer: NodeJS.Timeout | null = null;
   private loaded = false;
+  private lastResync = 0;
 
   async start(subscriber: Redis) {
     await subscriber.subscribe(CHANNELS.vessels);
@@ -55,12 +60,25 @@ export class ShipCache {
         logger.warn({ err }, 'ship cache: bad payload');
       }
     });
-    // If the DB is unreachable at startup, the route falls back to SQL until a resync succeeds.
-    await this.resync().catch((err) => logger.error({ err }, 'ship cache initial load failed'));
+    const resync = (why: string) =>
+      this.resync().catch((err) => logger.error({ err, why }, 'ship cache resync failed'));
+    // Redis came back after a drop: live updates may have been missed meanwhile.
+    subscriber.on('ready', () => {
+      if (this.loaded) void resync('redis reconnected');
+    });
+    // If the DB is unreachable at startup, the route falls back to SQL until a load succeeds.
+    await resync('start');
     this.timer = setInterval(() => {
-      this.resync().catch((err) => logger.error({ err }, 'ship cache resync failed'));
-    }, RESYNC_MS);
+      if (!this.loaded) void resync('first load failed');
+      else if (Date.now() - this.lastResync >= RESYNC_MS) void resync('daily');
+      else this.prune();
+    }, TICK_MS);
     this.timer.unref();
+  }
+
+  /** Forgets ships not heard for MAX_AGE_MS (a full resync would drop them too). */
+  prune(now = Date.now()) {
+    for (const [mmsi, s] of this.ships) if (now - s.sensor_timestamp > MAX_AGE_MS) this.ships.delete(mmsi);
   }
 
   stop() {
@@ -92,6 +110,7 @@ export class ShipCache {
     }
     this.ships = next;
     this.loaded = true;
+    this.lastResync = Date.now();
     logger.debug({ ships: next.size, ms: Date.now() - t0 }, 'ship cache resynced');
   }
 
