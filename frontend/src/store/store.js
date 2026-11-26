@@ -4,6 +4,7 @@ import shipReducer from './shipSlice'
 import authReducer from './authSlice'
 import alertsReducer from './alertsSlice'
 import copilotReducer, { conversationRestored, loadChat, saveChat } from './copilotSlice'
+import guideReducer from './guideSlice'
 import { mapObjectsReducers } from '../features/mapObjects'
 import { settingsSync } from './settingsSync'
 import { errorMiddleware } from '../middleware/errorMiddleware'
@@ -15,6 +16,7 @@ export const store = configureStore({
     ships: shipReducer,
     alerts: alertsReducer,
     copilot: copilotReducer,
+    guide: guideReducer,
     ...mapObjectsReducers,
   },
   middleware: (getDefaultMiddleware) =>

@@ -1,4 +1,4 @@
-import { pool } from './pool.js';
+import { guardClient, pool } from './pool.js';
 import { logger } from '../shared/logger.js';
 
 export const TRACKS_JOB = 'tracks';
@@ -111,6 +111,7 @@ export async function reindexBloated(opts: { ratio?: number; minMb?: number } = 
   const ratio = opts.ratio ?? BLOAT_RATIO;
   const minBytes = (opts.minMb ?? BLOAT_MIN_MB) * 1024 * 1024;
   const client = await pool.connect();
+  const unguard = guardClient(client);
   const rebuilt: string[] = [];
   try {
     const { rows: lock } = await client.query<{ ok: boolean }>(`SELECT pg_try_advisory_lock($1) AS ok`, [REINDEX_LOCK]);
@@ -135,6 +136,7 @@ export async function reindexBloated(opts: { ratio?: number; minMb?: number } = 
       await client.query(`SELECT pg_advisory_unlock($1)`, [REINDEX_LOCK]);
     }
   } finally {
+    unguard();
     client.release();
   }
   return rebuilt;

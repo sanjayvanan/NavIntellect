@@ -1,0 +1,171 @@
+/* Shadow-cursor guide (ShadowGuide.jsx): above everything; only the card takes clicks, so the
+   user can press the real controls under the ring. */
+.shadow-guide {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  pointer-events: none;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+.sg-ring {
+  position: fixed;
+  border: 2.5px solid #8b5cf6;
+  border-radius: 12px;
+  box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.18), 0 0 22px rgba(236, 72, 153, 0.35);
+  transition: left 0.45s cubic-bezier(0.22, 1, 0.36, 1), top 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    width 0.45s cubic-bezier(0.22, 1, 0.36, 1), height 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: sg-pulse 1.6s ease-in-out infinite;
+}
+
+.sg-ring.big {
+  border-style: dashed;
+  animation: none;
+}
+
+@keyframes sg-pulse {
+  50% { box-shadow: 0 0 0 9px rgba(139, 92, 246, 0.08), 0 0 30px rgba(236, 72, 153, 0.45); }
+}
+
+/* The ghost pointer glides from step to step; its tip is at (x, y). */
+.sg-cursor {
+  position: fixed;
+  left: -4px;
+  top: -2px;
+  transition: transform 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+  filter: drop-shadow(0 3px 6px rgba(76, 29, 149, 0.45));
+}
+
+.sg-cursor.waiting {
+  opacity: 0.55;
+}
+
+.sg-ripple {
+  position: absolute;
+  left: 4px;
+  top: 2px;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  border: 2px solid #ec4899;
+  border-radius: 50%;
+  opacity: 0;
+  animation: sg-ripple 1.6s ease-out 0.75s infinite;
+}
+
+@keyframes sg-ripple {
+  0% { transform: scale(0.3); opacity: 0.9; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+.sg-card {
+  position: fixed;
+  width: min(320px, calc(100vw - 24px));
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #1b1030;
+  color: #fff;
+  box-shadow: 0 12px 34px rgba(17, 10, 40, 0.45);
+  pointer-events: auto;
+  transition: left 0.45s cubic-bezier(0.22, 1, 0.36, 1), top 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sg-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: #c4b5fd;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sg-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  cursor: pointer;
+}
+
+.sg-say {
+  margin: 8px 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.sg-missing {
+  margin: -4px 0 10px;
+  color: #fbcfe8;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.sg-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sg-count {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+}
+
+.sg-buttons {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.sg-buttons button {
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.sg-buttons button.primary {
+  border-color: transparent;
+  background: linear-gradient(135deg, #8b5cf6, #ec4899);
+  font-weight: 600;
+}
+
+.sg-done {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sg-ring,
+  .sg-cursor,
+  .sg-card { transition: none; }
+  .sg-ring,
+  .sg-ripple { animation: none; }
+}

@@ -1,0 +1,111 @@
+/* ✦ AI explain button and answer (ship briefing, why an alert matters) */
+.ai-explain {
+  --ai-accent: #7c3aed;
+  --ai-soft: rgba(124, 58, 237, 0.08);
+  font-family: inherit;
+}
+
+.dark .ai-explain,
+.ai-explain.dark {
+  --ai-accent: #a78bfa;
+  --ai-soft: rgba(167, 139, 250, 0.12);
+}
+
+.ai-explain-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid rgba(124, 58, 237, 0.35);
+  border-radius: 999px;
+  background: var(--ai-soft);
+  color: var(--ai-accent);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ai-explain-btn:hover {
+  border-color: var(--ai-accent);
+}
+
+.ai-explain-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ai-accent);
+  font-size: 12.5px;
+}
+
+.ai-explain-loading svg {
+  animation: ai-explain-spin 1.4s linear infinite;
+}
+
+@keyframes ai-explain-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ai-explain-answer {
+  padding: 9px 11px;
+  border-left: 3px solid var(--ai-accent);
+  border-radius: 0 8px 8px 0;
+  background: var(--ai-soft);
+}
+
+.ai-explain-answer p {
+  margin: 0 0 5px;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.ai-explain-answer small {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ai-accent);
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.ai-explain-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: #e53935;
+  font-size: 12.5px;
+}
+
+.ai-explain-error button {
+  padding: 2px 8px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* In the ship details: a full-width row under Track. */
+.detail-row.ai-row {
+  display: block;
+  border-bottom: none;
+  padding-top: 10px;
+}
+
+.ship-sheet .detail-row.ai-row {
+  grid-column: 1 / -1;
+  padding: 0;
+  background: none;
+}
+
+/* Under an alert in Notifications. */
+.notif-explain {
+  padding: 0 8px 8px 44px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-explain-loading svg { animation: none; }
+}

@@ -14,6 +14,8 @@ import { ShipCanvasLayer } from '../map/ShipCanvasLayer'
 import { zoomToPoint } from '../map/navigation'
 import SearchBox from './SearchBox'
 import { CloseIcon } from './Icons'
+import AiExplain from './AiExplain'
+import { copilotApi } from '../services/copilot'
 import { usePhoneLayout } from '../hooks/usePhoneLayout'
 import { attachSwipeToClose } from '../utils/swipeToClose'
 import { DENSITY_LEVELS } from '../config/shipDensity'
@@ -45,12 +47,12 @@ const TrackHistoryRow = ({ ship, track, onShow, onHide }) => {
         <span>Track</span>
       </div>
       {!shown ? (
-        <button type="button" className="track-button" onClick={() => onShow(track.hours || DEFAULT_TRACK_HOURS)}>
+        <button type="button" className="track-button" data-guide="ship.track" onClick={() => onShow(track.hours || DEFAULT_TRACK_HOURS)}>
           Show track
         </button>
       ) : (
         <div className="track-controls">
-          <div className="track-periods" role="group" aria-label="Track period">
+          <div className="track-periods" role="group" aria-label="Track period" data-guide="ship.trackPeriods">
             {TRACK_PERIODS.map((p) => (
               <button
                 key={p.hours}
@@ -290,6 +292,11 @@ function ShipLayer() {
     dispatch(setSelectedShip(ship))
   }, [ships, dispatch])
 
+  // The shadow-cursor guide can point at the map itself ("tap a ship on the map").
+  useEffect(() => {
+    map.getContainer().setAttribute('data-guide', 'map')
+  }, [map])
+
   // One canvas layer for all ships.
   useEffect(() => {
     const layer = new ShipCanvasLayer({
@@ -497,12 +504,22 @@ function ShipLayer() {
           renderShipPopup(
             liveSelected,
             theme,
-            <TrackHistoryRow
-              ship={liveSelected}
-              track={track}
-              onShow={(hours) => dispatch(showTrack({ mmsi: liveSelected.mmsi, hours }))}
-              onHide={() => dispatch(hideTrack())}
-            />,
+            <>
+              <TrackHistoryRow
+                ship={liveSelected}
+                track={track}
+                onShow={(hours) => dispatch(showTrack({ mmsi: liveSelected.mmsi, hours }))}
+                onHide={() => dispatch(hideTrack())}
+              />
+              <div className="detail-row ai-row">
+                <AiExplain
+                  key={liveSelected.mmsi}
+                  label="AI briefing"
+                  guide="ship.briefing"
+                  load={(signal) => copilotApi.explainShip(liveSelected.mmsi, signal)}
+                />
+              </div>
+            </>,
           ),
           popupEl,
         )}
@@ -515,12 +532,22 @@ function ShipLayer() {
             {renderShipPopup(
             liveSelected,
             theme,
-            <TrackHistoryRow
-              ship={liveSelected}
-              track={track}
-              onShow={(hours) => dispatch(showTrack({ mmsi: liveSelected.mmsi, hours }))}
-              onHide={() => dispatch(hideTrack())}
-            />,
+            <>
+              <TrackHistoryRow
+                ship={liveSelected}
+                track={track}
+                onShow={(hours) => dispatch(showTrack({ mmsi: liveSelected.mmsi, hours }))}
+                onHide={() => dispatch(hideTrack())}
+              />
+              <div className="detail-row ai-row">
+                <AiExplain
+                  key={liveSelected.mmsi}
+                  label="AI briefing"
+                  guide="ship.briefing"
+                  load={(signal) => copilotApi.explainShip(liveSelected.mmsi, signal)}
+                />
+              </div>
+            </>,
           )}
           </div>,
           document.body,

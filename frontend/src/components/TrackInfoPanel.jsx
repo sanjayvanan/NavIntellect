@@ -152,7 +152,7 @@ function TrackInfoPanel({ style, theme, onClose }) {
   const summary = q ? `${shipsWord} match “${q}” ${zone ? scope : ''}` : `${shipsWord} ${scope}`
 
   return (
-    <div ref={ref} className={`layer-control-panel track-info-panel ${theme}`} style={style}>
+    <div ref={ref} className={`layer-control-panel track-info-panel ${theme}`} style={style} data-guide-panel="ships">
       <div className="panel-header">
         <span>Track info</span>
         <button className="panel-close" onClick={onClose} aria-label="Close">
@@ -165,7 +165,7 @@ function TrackInfoPanel({ style, theme, onClose }) {
         <span>{summary}</span>
       </div>
 
-      <label className="ti-search">
+      <label className="ti-search" data-guide="ships.search">
         <SearchIcon size={16} />
         <input
           type="search"
@@ -179,7 +179,7 @@ function TrackInfoPanel({ style, theme, onClose }) {
       <div className="ti-filters">
         <label className="ti-field">
           <span>Area</span>
-          <select value={zoneId} onChange={(e) => setZoneId(e.target.value)}>
+          <select value={zoneId} data-guide="ships.area" onChange={(e) => setZoneId(e.target.value)}>
             <option value="">All ships</option>
             {zoneGroups.map((g) => (
               <optgroup key={g.type.id} label={g.type.plural}>
@@ -194,7 +194,7 @@ function TrackInfoPanel({ style, theme, onClose }) {
         </label>
         <label className="ti-field">
           <span>Sort</span>
-          <select value={sort} onChange={(e) => setSort(e.target.value)}>
+          <select value={sort} data-guide="ships.sort" onChange={(e) => setSort(e.target.value)}>
             {SORTS.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.label}
@@ -218,7 +218,7 @@ function TrackInfoPanel({ style, theme, onClose }) {
       )}
       {!zones.length && <p className="ti-hint">Draw a zone under Graphical objects to filter the ships inside it.</p>}
 
-      <div className={`ti-list ${loading ? 'busy' : ''}`}>
+      <div className={`ti-list ${loading ? 'busy' : ''}`} data-guide="ships.list">
         {status === 'failed' && (
           <div className="ti-empty">
             <p>{error}</p>

@@ -21,7 +21,31 @@ export interface ModelClient {
     contents: Content[];
     systemInstruction: string;
     allowTools: boolean;
+    /** false: no map tools declared at all (one-shot answers: explanations, guides). */
+    tools?: boolean;
+    /** Answer as JSON matching this JSON Schema (structured output). */
+    json?: Record<string, unknown>;
+    maxTokens?: number;
   }): Promise<{ functionCalls?: FunctionCall[]; text?: string; content?: Content; tokens?: number }>;
+}
+
+/**
+ * Reserves one Gemini request in the free-tier budget. When only the per-minute limit is hit,
+ * waits once (up to MAX_MINUTE_WAIT_S) and tries again; otherwise a 429 CopilotError.
+ */
+export async function reserveRequest(budget: AiBudget, userId: string, sleep?: (s: number) => Promise<void>) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await budget.take(userId);
+    } catch (err) {
+      if (err instanceof BudgetError && err.kind === 'minute' && attempt === 0 && err.retryAfter <= MAX_MINUTE_WAIT_S) {
+        await (sleep ?? ((s) => new Promise((r) => setTimeout(r, s * 1000))))(err.retryAfter);
+        continue;
+      }
+      if (err instanceof BudgetError) throw new CopilotError(429, err.message, err.retryAfter);
+      throw err;
+    }
+  }
 }
 
 export interface ChatMessage {
@@ -90,19 +114,8 @@ export class Copilot {
   ) {}
 
   /** Reserves one Gemini request; waits briefly when only the per-minute limit is hit. */
-  private async reserve(userId: string) {
-    for (let attempt = 0; ; attempt++) {
-      try {
-        return await this.deps.budget.take(userId);
-      } catch (err) {
-        if (err instanceof BudgetError && err.kind === 'minute' && attempt === 0 && err.retryAfter <= MAX_MINUTE_WAIT_S) {
-          await (this.deps.sleep ?? ((s) => new Promise((r) => setTimeout(r, s * 1000))))(err.retryAfter);
-          continue;
-        }
-        if (err instanceof BudgetError) throw new CopilotError(429, err.message, err.retryAfter);
-        throw err;
-      }
-    }
+  private reserve(userId: string) {
+    return reserveRequest(this.deps.budget, userId, this.deps.sleep);
   }
 
   async ask(opts: { userId: string; messages: ChatMessage[]; context: CopilotContext; get: ApiGet }): Promise<CopilotResult> {

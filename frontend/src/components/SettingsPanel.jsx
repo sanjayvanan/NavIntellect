@@ -18,9 +18,9 @@ import {
 
 const SIZE_LABELS = { small: 'Small', medium: 'Medium', large: 'Large' }
 
-function Toggle({ label, hint, checked, onChange }) {
+function Toggle({ label, hint, checked, onChange, guide }) {
   return (
-    <label className="setting-toggle">
+    <label className="setting-toggle" data-guide={guide}>
       <span className="setting-text">
         <span>{label}</span>
         {hint && <small>{hint}</small>}
@@ -48,7 +48,7 @@ function SettingsPanel({ style, onClose }) {
   const theme = settings.mode
 
   return (
-    <div ref={ref} className={`layer-control-panel settings-panel ${theme}`} style={style}>
+    <div ref={ref} className={`layer-control-panel settings-panel ${theme}`} style={style} data-guide-panel="settings">
       <div className="panel-header">
         <span>Settings</span>
         <button className="panel-close" onClick={onClose} aria-label="Close">
@@ -68,6 +68,7 @@ function SettingsPanel({ style, onClose }) {
           <input
             type="range"
             className="density-slider"
+            data-guide="settings.density"
             min={0}
             max={DENSITY_LEVELS.length - 1}
             step={1}
@@ -88,6 +89,7 @@ function SettingsPanel({ style, onClose }) {
 
         <Toggle
           label="Cluster ships"
+          guide="settings.cluster"
           hint="Group nearby ships into count bubbles"
           checked={settings.clustering}
           onChange={() => dispatch(toggleClustering())}
@@ -97,7 +99,7 @@ function SettingsPanel({ style, onClose }) {
           <div className="setting-text">
             <span>Ship icon size</span>
           </div>
-          <div className="segmented">
+          <div className="segmented" data-guide="settings.size">
             {SHIP_SIZES.map((size) => (
               <button
                 key={size}
@@ -112,6 +114,7 @@ function SettingsPanel({ style, onClose }) {
 
         <Toggle
           label="Ship names"
+          guide="settings.names"
           hint="Labels next to ships when zoomed in"
           checked={settings.showLabels}
           onChange={() => dispatch(toggleLabels())}
@@ -122,6 +125,7 @@ function SettingsPanel({ style, onClose }) {
         <h4>Data</h4>
         <Toggle
           label="Live updates"
+          guide="settings.live"
           hint={settings.liveUpdates ? 'Positions stream in real time' : 'Refreshes every 60 s'}
           checked={settings.liveUpdates}
           onChange={() => dispatch(toggleLiveUpdates())}
@@ -130,7 +134,7 @@ function SettingsPanel({ style, onClose }) {
 
       <div className="settings-section">
         <h4>Appearance</h4>
-        <Toggle label="Dark mode" checked={theme === 'dark'} onChange={() => dispatch(toggleTheme())} />
+        <Toggle label="Dark mode" guide="settings.dark" checked={theme === 'dark'} onChange={() => dispatch(toggleTheme())} />
       </div>
 
       <div className="settings-footer">

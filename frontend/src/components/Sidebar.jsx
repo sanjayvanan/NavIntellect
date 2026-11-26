@@ -30,6 +30,7 @@ import NotificationsPanel from './NotificationsPanel'
 import TrackInfoPanel from './TrackInfoPanel'
 import CopilotPanel from './CopilotPanel'
 import { selectUnreadCount } from '../store/alertsSlice'
+import { loadCopilotStatus } from '../store/copilotSlice'
 import BrandMark from './BrandMark'
 import './Sidebar.css'
 
@@ -46,6 +47,8 @@ const PHONE_TABS = [
   { id: 'more', Icon: MenuIcon, label: 'More' },
 ]
 const MORE_PANELS = new Set(['more', 'mapType', 'settings', 'account'])
+// Names the shadow-cursor guide points at (data-guide), the same on desktop and phones.
+const GUIDE_NAV = { copilot: 'nav.ai', trackInfo: 'nav.ships', notifications: 'nav.alerts', objects: 'nav.zones', more: 'nav.more', mapType: 'nav.layers', settings: 'nav.settings' }
 
 const sidebarButtons = [
   { id: 'copilot', Icon: AiSparkIcon, label: 'AI copilot' },
@@ -77,6 +80,11 @@ function Sidebar({ rail, fullscreen }) {
   const [buttonPosition, setButtonPosition] = useState({ top: 0 })
   const map = useMap()
   const phone = usePhoneLayout()
+
+  // Whether the server has AI (shows or hides the ✦ buttons everywhere).
+  useEffect(() => {
+    dispatch(loadCopilotStatus())
+  }, [dispatch])
 
   // Phones: panels are bottom sheets; drag one down by its top to close it.
   useEffect(() => {
@@ -161,6 +169,7 @@ function Sidebar({ rail, fullscreen }) {
             key={id}
             type="button"
             className={`tab-button ${id === 'copilot' ? 'ai' : ''} ${active ? 'active' : ''}`}
+            data-guide={GUIDE_NAV[id]}
             onClick={() => openPanel(id === 'more' && MORE_PANELS.has(panel) ? panel : id)}
             aria-label={badge ? `${label} (${unread} new)` : label}
             aria-pressed={active}
@@ -207,6 +216,7 @@ function Sidebar({ rail, fullscreen }) {
               <button
                 key={id}
                 className={`sidebar-button ${id === 'copilot' ? 'ai' : ''} ${isActive(id) ? 'active' : ''}`}
+                data-guide={GUIDE_NAV[id]}
                 onClick={(e) => handleSidebarClick(id, e)}
                 data-label={fullLabel}
                 aria-label={fullLabel}
@@ -228,6 +238,7 @@ function Sidebar({ rail, fullscreen }) {
         <div className="sidebar-group">
           <button
             className={`sidebar-button ${clustering ? 'on' : ''}`}
+            data-guide="nav.cluster"
             onClick={() => dispatch(toggleClustering())}
             data-label={clustering ? 'Clustering: on' : 'Clustering: off'}
             aria-label="Cluster ships"
@@ -249,6 +260,7 @@ function Sidebar({ rail, fullscreen }) {
           <div className="sidebar-divider" />
           <button
             className={`sidebar-avatar ${showAccount ? 'active' : ''}`}
+            data-guide="nav.account"
             onClick={() => setPanel((open) => (open === 'account' ? null : 'account'))}
             data-label={displayName(user)}
             aria-label="Account"
@@ -261,28 +273,28 @@ function Sidebar({ rail, fullscreen }) {
       )}
 
       {panel === 'more' && (
-        <div className={`layer-control-panel more-panel ${theme}`}>
+        <div className={`layer-control-panel more-panel ${theme}`} data-guide-panel="more">
           <div className="panel-header">
             <span>More</span>
             <button className="panel-close" onClick={closePanels} aria-label="Close">
               <CloseIcon size={16} />
             </button>
           </div>
-          <button type="button" className="more-row" onClick={() => setPanel('mapType')}>
+          <button type="button" className="more-row" data-guide="more.layers" onClick={() => setPanel('mapType')}>
             <LayersIcon />
             <span>
               Map layers
               <small>{activeLayer}</small>
             </span>
           </button>
-          <button type="button" className="more-row" onClick={() => setPanel('settings')}>
+          <button type="button" className="more-row" data-guide="more.settings" onClick={() => setPanel('settings')}>
             <SettingsIcon />
             <span>
               Settings
               <small>Ship density, names, dark mode</small>
             </span>
           </button>
-          <label className="more-row">
+          <label className="more-row" data-guide="more.cluster">
             <ClusterIcon />
             <span>
               Group ships
@@ -296,7 +308,7 @@ function Sidebar({ rail, fullscreen }) {
               <span>{fullscreen.isFullscreen ? 'Exit full screen' : 'Full screen'}</span>
             </button>
           )}
-          <button type="button" className="more-row" onClick={() => setPanel('account')}>
+          <button type="button" className="more-row" data-guide="more.account" onClick={() => setPanel('account')}>
             <span className="more-avatar">{initials(user)}</span>
             <span>
               {displayName(user)}
@@ -319,14 +331,14 @@ function Sidebar({ rail, fullscreen }) {
       {panel === 'copilot' && <CopilotPanel style={tallStyle} theme={theme} onClose={closePanels} />}
 
       {panel === 'mapType' && (
-        <div className={`layer-control-panel ${theme}`} style={panelStyle}>
+        <div className={`layer-control-panel ${theme}`} style={panelStyle} data-guide-panel="layers">
           <div className="panel-header">
             <span>Map layers</span>
             <button className="panel-close" onClick={closePanels} aria-label="Close">
               <CloseIcon size={16} />
             </button>
           </div>
-          <div className="base-layers">
+          <div className="base-layers" data-guide="layers.base">
             <h4>Base map</h4>
             {baseLayers.map((layer) => (
               <label key={layer.name} className="layer-option">
@@ -341,7 +353,7 @@ function Sidebar({ rail, fullscreen }) {
             ))}
           </div>
 
-          <div className="overlay-layers">
+          <div className="overlay-layers" data-guide="layers.overlays">
             <h4>Overlays</h4>
             {overlayLayers.map((overlay) => (
               <label key={overlay.name} className="layer-option">

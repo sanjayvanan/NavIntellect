@@ -357,7 +357,7 @@ function MapObjectsPanel({ style, theme, onClose }) {
   const formOpen = ['zoneDraft', 'zoneEdit', 'pinDraft', 'pinEdit'].includes(view.kind)
 
   return (
-    <div ref={panelRef} className={`layer-control-panel gf-panel ${theme}`} style={style}>
+    <div ref={panelRef} className={`layer-control-panel gf-panel ${theme}`} style={style} data-guide-panel="zones">
       <div className="panel-header">
         <span>Graphical objects</span>
         <button
@@ -377,7 +377,7 @@ function MapObjectsPanel({ style, theme, onClose }) {
         {ACTIONS.map(({ id, label, caption, Icon }) => {
           const on = actionOfTool(tool)?.id === id
           return (
-            <button key={id} type="button" className={`gf-action ${on ? 'on' : ''}`} onClick={() => toggleAction(id)} aria-pressed={on}>
+            <button key={id} type="button" className={`gf-action ${on ? 'on' : ''}`} data-guide={`objects.${id}`} onClick={() => toggleAction(id)} aria-pressed={on}>
               <span className="gf-action-icon">
                 <Icon size={20} />
               </span>

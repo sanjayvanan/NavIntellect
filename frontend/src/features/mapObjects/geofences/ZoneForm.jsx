@@ -31,7 +31,7 @@ export function ZoneForm({ initial, isNew, canShare, measures, saving, error, on
         </Metrics>
       )}
       <Field label="Name">
-        <input ref={nameRef} value={f.name} onChange={(e) => set('name', e.target.value)} maxLength={120} required placeholder="e.g. Harbour approach" />
+        <input ref={nameRef} data-guide="zoneForm.name" value={f.name} onChange={(e) => set('name', e.target.value)} maxLength={120} required placeholder="e.g. Harbour approach" />
       </Field>
       <div className="gf-row">
         <Field label="Type">
@@ -65,6 +65,7 @@ export function ZoneForm({ initial, isNew, canShare, measures, saving, error, on
 
       <Toggle
         label="Alerts for this zone"
+        guide="zoneForm.alerts"
         hint="Raise alerts when vessels enter, leave, speed or loiter here"
         checked={f.active}
         onChange={() => set('active', !f.active)}
@@ -96,7 +97,7 @@ export function ZoneForm({ initial, isNew, canShare, measures, saving, error, on
         <button type="button" className="gf-btn ghost" onClick={onCancel}>
           {isNew ? 'Discard' : 'Cancel'}
         </button>
-        <button type="submit" className="gf-btn primary" disabled={saving || !f.name.trim()}>
+        <button type="submit" className="gf-btn primary" data-guide="zoneForm.save" disabled={saving || !f.name.trim()}>
           {saving ? 'Saving…' : 'Save'}
         </button>
       </div>

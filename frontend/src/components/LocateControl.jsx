@@ -115,6 +115,7 @@ function LocateControl() {
       <button
         type="button"
         className={`locate-btn ${status}`}
+        data-guide="locate"
         onClick={handleClick}
         title={label}
         aria-label={label}

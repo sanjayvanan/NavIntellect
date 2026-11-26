@@ -4,6 +4,8 @@ import { useDispatch, useSelector } from 'react-redux'
 import L from 'leaflet'
 import { fetchAlerts, notificationsPanelToggled } from '../store/alertsSlice'
 import { ALERT_ICONS, describeAlert, focusAlert, isPhoneLayout, timeAgo } from '../utils/alertText'
+import AiExplain from './AiExplain'
+import { copilotApi } from '../services/copilot'
 import { CloseIcon } from './Icons'
 import './Notifications.css'
 
@@ -32,7 +34,7 @@ function NotificationsPanel({ style, theme, onClose }) {
   }, [dispatch])
 
   return (
-    <div ref={ref} className={`layer-control-panel notifications-panel ${theme}`} style={style}>
+    <div ref={ref} className={`layer-control-panel notifications-panel ${theme}`} style={style} data-guide-panel="alerts">
       <div className="panel-header">
         <span>Notifications</span>
         <button className="panel-close" onClick={onClose} aria-label="Close">
@@ -57,7 +59,7 @@ function NotificationsPanel({ style, theme, onClose }) {
       )}
 
       {items.length > 0 && (
-        <ul className="notif-list">
+        <ul className="notif-list" data-guide="alerts.list">
           {items.map((a) => {
             const { vessel, action, zone, extra } = describeAlert(a)
             const unread = Date.parse(a.created_at) > readBefore
@@ -86,6 +88,12 @@ function NotificationsPanel({ style, theme, onClose }) {
                   </span>
                   {unread && <span className="notif-dot" aria-label="New" />}
                 </button>
+                <AiExplain
+                  className="notif-explain"
+                  label="Why it matters"
+                  guide="alerts.explain"
+                  load={(signal) => copilotApi.explainAlert(a.id, signal)}
+                />
               </li>
             )
           })}

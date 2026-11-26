@@ -69,6 +69,7 @@ export function ToolGuideBar({ container, toolId, readout, onSwitchTool, onUndo,
                   key={id}
                   type="button"
                   role="radio"
+                  data-guide={`draw.${id}`}
                   aria-checked={id === toolId}
                   className={id === toolId ? 'on' : ''}
                   onClick={() => id !== toolId && onSwitchTool(id)}
@@ -92,7 +93,7 @@ export function ToolGuideBar({ container, toolId, readout, onSwitchTool, onUndo,
           <button type="button" className="tg-btn" onClick={onUndo} disabled={!vertices}>
             Undo <kbd>⌫</kbd>
           </button>
-          <button type="button" className="tg-btn primary" onClick={onFinish} disabled={vertices < minPoints(tool)}>
+          <button type="button" className="tg-btn primary" data-guide="draw.finish" onClick={onFinish} disabled={vertices < minPoints(tool)}>
             Finish <kbd>↵</kbd>
           </button>
         </div>

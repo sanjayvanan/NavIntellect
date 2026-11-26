@@ -65,6 +65,18 @@ export async function alertRoutes(app: FastifyInstance) {
     return rows;
   });
 
+  // One alert (404 when it does not exist or belongs to another user's personal zone).
+  app.get('/api/alerts/:id', { preHandler: readAccess }, async (req) => {
+    const { id } = parse(uuidParam, req.params);
+    const { rows } = await pool.query(
+      `SELECT ${ALERT_COLUMNS}, z.kind::text AS zone_kind, z.rules AS zone_rules FROM ${ALERT_FROM}
+       WHERE a.id = $1 AND (z.id IS NULL OR ${visibleSql('z', 2)})`,
+      [id, viewerId(req)],
+    );
+    if (!rows[0]) throw notFound('Alert');
+    return rows[0];
+  });
+
   app.post('/api/alerts/:id/ack', { preHandler: requireRole('operator') }, async (req) => {
     const { id } = parse(uuidParam, req.params);
     const { note } = parse(z.object({ note: z.string().max(500).optional() }).default({}), req.body ?? {});

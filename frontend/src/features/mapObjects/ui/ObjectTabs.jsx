@@ -28,6 +28,7 @@ export function ObjectTabs({ tabs, active, onChange, filter, onFilter, typeFilte
             key={t.id}
             type="button"
             role="tab"
+            data-guide={`objects.tab.${t.id}`}
             aria-selected={t.id === tab.id}
             className={t.id === tab.id ? 'on' : ''}
             onClick={() => onChange(t.id)}

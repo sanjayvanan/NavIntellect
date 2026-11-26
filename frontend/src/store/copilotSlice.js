@@ -135,6 +135,10 @@ const copilotSlice = createSlice({
       state.activeChatId = activeChatId
       state.messages = asOld(chats.find((c) => c.id === activeChatId)?.messages ?? [])
     },
+    /** Latest AI usage, from any AI answer (explanations, guides). */
+    usageUpdated: (state, action) => {
+      state.usage = action.payload
+    },
     requestShipList: {
       reducer: (state, action) => {
         state.shipListRequest = action.payload
@@ -170,11 +174,33 @@ const copilotSlice = createSlice({
         state.messages.push({ id: nextId++, role: 'assistant', text: action.error.message || 'Something went wrong.', error: true })
         syncActiveChat(state)
       })
+      // "How do I…?" questions are answered by the on-screen guide (guideSlice); keep them in the chat.
+      .addMatcher((a) => a.type === 'guide/start/pending', (state, action) => {
+        state.busy = true
+        state.messages.push({ id: nextId++, role: 'user', text: action.meta.arg })
+        syncActiveChat(state)
+      })
+      .addMatcher((a) => a.type === 'guide/start/fulfilled', (state, action) => {
+        const { title, steps, note, usage } = action.payload
+        state.busy = false
+        state.usage = usage ?? state.usage
+        const text = steps?.length
+          ? `Showing you on screen: ${title} (${steps.length} step${steps.length > 1 ? 's' : ''}). Follow the glowing cursor.`
+          : note || "I couldn't find a way to do that in this app."
+        state.messages.push({ id: nextId++, role: 'assistant', text, guide: Boolean(steps?.length) })
+        syncActiveChat(state)
+      })
+      .addMatcher((a) => a.type === 'guide/start/rejected', (state, action) => {
+        state.busy = false
+        if (action.meta.aborted) return
+        state.messages.push({ id: nextId++, role: 'assistant', text: action.error.message || 'The guide could not start.', error: true })
+        syncActiveChat(state)
+      })
       .addMatcher((a) => a.type === 'auth/logout/fulfilled' || a.type === 'auth/sessionExpired', () => initialState)
   },
 })
 
-export const { clearConversation, conversationRestored, deleteChat, openChat, requestShipList } = copilotSlice.actions
+export const { clearConversation, conversationRestored, deleteChat, openChat, requestShipList, usageUpdated } = copilotSlice.actions
 export default copilotSlice.reducer
 
 /**

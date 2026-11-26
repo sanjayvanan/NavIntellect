@@ -6,6 +6,8 @@ import L from 'leaflet'
 import { askCopilot, clearConversation, deleteChat, linkShips, loadCopilotStatus, openChat, requestShipList } from '../store/copilotSlice'
 import { timeAgo } from '../utils/alertText'
 import { usePhoneLayout } from '../hooks/usePhoneLayout'
+import { startGuide } from '../store/guideSlice'
+import { isHowToQuestion } from '../guide/targets'
 import { showTrack } from '../store/shipSlice'
 import { zoomToPoint } from '../map/navigation'
 import { boundsToBbox } from '../utils/mapBbox'
@@ -21,6 +23,13 @@ const focusUnlessTouch = (el) => {
 // Tapping Send must not take the focus from the text box: on a phone that closes the keyboard,
 // the panel jumps back down, and the tap can miss the button.
 const keepFocus = (e) => e.preventDefault()
+
+// "How do I…?" is answered by the shadow cursor on the real screen (see ShadowGuide).
+const HOW_TO = [
+  'How do I get alerts when ships enter an area?',
+  'How do I see where a ship has been?',
+  'How do I switch to the satellite map?',
+]
 
 const SUGGESTIONS = [
   'How many ships are in my view right now?',
@@ -123,6 +132,12 @@ function useKeyboardArea(active) {
   return area
 }
 
+const CursorIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M4 2.5l15 8.2-6.6 1.7-3.1 6.4z" fill="currentColor" />
+  </svg>
+)
+
 function Answer({ message, onShip }) {
   const parts = linkShips(message.text, message.ships)
   return (
@@ -195,6 +210,15 @@ function CopilotPanel({ style, theme, onClose }) {
       zoom: Math.round(map.getZoom()),
       selected: selected ? { mmsi: selected.mmsi, name: selected.track_name?.trim() || undefined } : null,
     }
+    if (isHowToQuestion(q)) {
+      // Shown on screen: the panel steps aside once the guide has its steps.
+      const request = dispatch(startGuide(q))
+      requestRef.current = request
+      request.then((r) => {
+        if (r.payload?.steps?.length) onClose()
+      })
+      return
+    }
     requestRef.current = dispatch(askCopilot({ text: q, context }))
   }
 
@@ -208,6 +232,7 @@ function CopilotPanel({ style, theme, onClose }) {
     <div
       ref={ref}
       className={`layer-control-panel copilot-panel ${theme} ${keyboard ? 'cp-keyboard' : ''}`}
+      data-guide-panel="ai"
       style={keyboard ? { ...style, '--kb-top': `${keyboard.top}px`, '--kb-height': `${keyboard.height}px` } : style}
     >
       <div className="panel-header">
@@ -274,9 +299,19 @@ function CopilotPanel({ style, theme, onClose }) {
           <div className="cp-messages" ref={listRef} aria-live="polite">
             {messages.length === 0 && (
               <div className="cp-welcome">
-                <p>Ask about the ships, zones and alerts on the map. I can also open ships, draw tracks and move the map.</p>
+                <p>Ask about the ships, zones and alerts on the map. I can also open ships, draw tracks and move the map, or show you how to do something.</p>
                 <div className="cp-suggestions">
                   {suggestions.map((s) => (
+                    <button key={s} type="button" onClick={() => send(s)} disabled={busy || enabled == null}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+                <p className="cp-howto-title">
+                  <CursorIcon /> Show me how (a guide on your screen)
+                </p>
+                <div className="cp-suggestions howto">
+                  {HOW_TO.map((s) => (
                     <button key={s} type="button" onClick={() => send(s)} disabled={busy || enabled == null}>
                       {s}
                     </button>

@@ -793,3 +793,99 @@ describe('health', () => {
     expect(stats.vessels_known).toBeGreaterThan(5);
   });
 });
+
+describe('AI explain and guide', () => {
+  let token = '';
+  const auth = () => ({ authorization: `Bearer ${token}` });
+  const post = (url: string, payload?: unknown) => app.inject({ method: 'POST', url, headers: auth(), ...(payload ? { payload } : {}) });
+
+  beforeAll(async () => {
+    const keys = await redis.keys('ais_test:ai:*');
+    if (keys.length) await redis.del(...keys);
+    token = (await app.inject({
+      method: 'POST', url: '/api/auth/register', remoteAddress: '10.9.9.6', payload: { email: 'explain-user@test.local', password: 'explain-user-pass' },
+    })).json().access_token;
+  });
+
+  it('briefs a ship from its data, once, then from cache', async () => {
+    aiCalls.length = 0;
+    aiScript = [() => ({ text: 'BROWSE ALPHA is a cargo ship near Réunion, nothing unusual.' })];
+    const res = await post('/api/ai/explain/ship/419500001');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ text: expect.stringContaining('BROWSE ALPHA'), cached: false, usage: { user_used_today: 1 } });
+    // One plain request: no map tools, the ship's data in the prompt.
+    expect(aiCalls).toHaveLength(1);
+    expect(aiCalls[0]).toMatchObject({ tools: false, allowTools: false });
+    expect(aiCalls[0]!.systemInstruction).toContain('briefing');
+    const data = JSON.parse((aiCalls[0]!.contents[0]!.parts![0] as { text: string }).text);
+    expect(data.ship).toMatchObject({ mmsi: 419500001, name: 'BROWSE ALPHA' });
+    expect(data).toHaveProperty('last_24h');
+
+    const again = (await post('/api/ai/explain/ship/419500001')).json();
+    expect(again).toMatchObject({ cached: true, usage: { user_used_today: 1 } });
+    expect(aiCalls).toHaveLength(1);
+
+    const unknown = await post('/api/ai/explain/ship/999999999');
+    expect(unknown.statusCode).toBe(404);
+    expect((await app.inject({ method: 'POST', url: '/api/ai/explain/ship/419500001' })).statusCode).toBe(401);
+  });
+
+  it('explains an alert the user can see, and 404s otherwise', async () => {
+    const { rows } = await pool.query(
+      `INSERT INTO alerts (type, severity, mmsi, geom, details)
+       VALUES ('loitering', 'warning', 419500001, ST_SetSRID(ST_MakePoint(55.1, -20.9), 4326)::geography, '{"minutes": 45}')
+       RETURNING id`,
+    );
+    const id = rows[0].id as string;
+    expect((await app.inject({ url: `/api/alerts/${id}`, headers: auth() })).json()).toMatchObject({ id, type: 'loitering', vessel_name: 'BROWSE ALPHA' });
+
+    aiCalls.length = 0;
+    aiScript = [() => ({ text: 'BROWSE ALPHA has been almost stationary for 45 minutes; check whether it is at anchor.' })];
+    const res = await post(`/api/ai/explain/alert/${id}`);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ text: expect.stringContaining('45 minutes'), cached: false });
+    const data = JSON.parse((aiCalls[0]!.contents[0]!.parts![0] as { text: string }).text);
+    expect(data.alert).toMatchObject({ type: 'loitering', details: { minutes: 45 } });
+    expect((await post(`/api/ai/explain/alert/${id}`)).json()).toMatchObject({ cached: true });
+
+    expect((await post('/api/ai/explain/alert/00000000-0000-4000-8000-000000000000')).statusCode).toBe(404);
+    expect((await post('/api/ai/explain/alert/not-a-uuid')).statusCode).toBe(400);
+    await pool.query(`DELETE FROM alerts WHERE id = $1`, [id]);
+  });
+
+  it('plans shadow-cursor steps as JSON, keeping only controls on the screen', async () => {
+    const targets = [
+      { id: 'nav.zones', label: 'Zones', hint: 'Opens your pins and zones' },
+      { id: 'objects.drawZone', label: 'Draw zone' },
+      { id: 'zoneForm.alerts', label: 'Alerts switch' },
+    ];
+    aiCalls.length = 0;
+    aiScript = [
+      () => ({
+        text: JSON.stringify({
+          title: 'Get alerts for an area',
+          steps: [
+            { target: 'nav.zones', say: 'Open Zones', action: 'click' },
+            { target: 'made.up', say: 'Invented control', action: 'click' },
+            { target: 'objects.drawZone', say: 'Choose Draw zone', action: 'click' },
+            { target: 'zoneForm.alerts', say: 'Turn alerts on', action: 'click' },
+          ],
+        }),
+      }),
+    ];
+    const body = { question: 'How do I get alerts when ships enter an area?', layout: 'phone', panel: null, targets };
+    const res = await post('/api/ai/guide', body);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ title: 'Get alerts for an area', cached: false, note: null });
+    expect(res.json().steps.map((s: { target: string }) => s.target)).toEqual(['nav.zones', 'objects.drawZone', 'zoneForm.alerts']);
+    // Structured output, restricted to the controls sent.
+    const schema = aiCalls[0]!.json as { properties: { steps: { items: { properties: { target: { enum: string[] } } } } } };
+    expect(schema.properties.steps.items.properties.target.enum).toEqual(['nav.zones', 'objects.drawZone', 'zoneForm.alerts']);
+
+    expect((await post('/api/ai/guide', { ...body, question: '  how do I get ALERTS when ships enter an area? ' })).json()).toMatchObject({ cached: true });
+
+    aiScript = [() => ({ text: 'not json' })];
+    expect((await post('/api/ai/guide', { ...body, question: 'How do I export a PDF?' })).statusCode).toBe(502);
+    expect((await post('/api/ai/guide', { ...body, targets: [{ id: 'Bad Id!', label: 'x' }] })).statusCode).toBe(400);
+  });
+});

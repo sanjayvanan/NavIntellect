@@ -16,9 +16,9 @@ export function Metrics({ compact, children }) {
 }
 
 /** Switch with a label and optional hint. */
-export function Toggle({ label, hint, checked, onChange, disabled }) {
+export function Toggle({ label, hint, checked, onChange, disabled, guide }) {
   return (
-    <label className={`gf-toggle ${disabled ? 'disabled' : ''}`}>
+    <label className={`gf-toggle ${disabled ? 'disabled' : ''}`} data-guide={guide}>
       <span>
         {label}
         {hint && <small>{hint}</small>}

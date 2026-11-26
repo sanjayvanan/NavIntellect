@@ -415,3 +415,19 @@
 .copilot-panel.cp-keyboard .cp-input {
   padding-bottom: 8px;
 }
+
+/* "Show me how" suggestions: start the on-screen guide */
+.cp-howto-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 14px 0 6px !important;
+  color: var(--cp-accent) !important;
+  font-size: 12px !important;
+  font-weight: 600;
+}
+
+.cp-suggestions.howto button {
+  border-style: dashed;
+  border-color: var(--cp-accent);
+}

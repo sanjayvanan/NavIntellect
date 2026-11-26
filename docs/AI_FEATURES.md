@@ -18,7 +18,9 @@ window bolted onto the side. Every idea below uses something the app already has
 | Feature | Status |
 | --- | --- |
 | Map copilot (sidebar ✦ "AI copilot") | **Built** |
-| Draw zones by talking, voice, explanations, anomaly detection, shadow-cursor guide | Planned |
+| Ship briefing (✦ "AI briefing" in ship details) and alert explanation (✦ "Why it matters" under each alert) | **Built**: `backend/src/ai/explain.ts`, `frontend/src/components/AiExplain.jsx` |
+| Shadow-cursor guide (ask the copilot "How do I…?") | **Built**: Gemini structured output limited to the controls on screen; `frontend/src/guide/targets.js` (control list, `data-guide` names), `ShadowGuide.jsx` |
+| Draw zones by talking, voice, anomaly detection ("AI watch"), stuck detection for the guide | Planned |
 
 ### Switching the copilot on
 

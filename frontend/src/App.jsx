@@ -1,3 +1,4 @@
+import ShadowGuide from './components/ShadowGuide'
 import { useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import MapComponent from './components/MapComponent'
@@ -35,6 +36,7 @@ function Workspace() {
   return (
     <div className={`app ${theme} ${collapsed ? 'sidebar-collapsed' : ''}`}>
       <aside ref={setRail} className={`sidebar-rail ${theme}`} aria-hidden={collapsed} />
+      <ShadowGuide />
 
       {/* Collapsed: the rail shrinks to this small floating group over the map, at the same spots. */}
       {collapsed && (

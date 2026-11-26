@@ -112,6 +112,7 @@ function SearchBox() {
         <div className="search-field">
           <SearchIcon size={18} />
           <input
+            data-guide="search"
             type="text"
             value={searchTerm}
             onChange={(e) => {
