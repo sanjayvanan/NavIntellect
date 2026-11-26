@@ -8,6 +8,7 @@ import { pool } from '../src/db/pool.js';
 import { normalize } from '../src/ingest/normalize.js';
 import { createPipeline } from '../src/ingest/pipeline.js';
 import { CHANNELS, createRedis } from '../src/shared/redis.js';
+import type { ModelClient } from '../src/ai/copilot.js';
 import { positionReport, shipStaticData } from './fixtures/messages.js';
 
 let app: Awaited<ReturnType<typeof buildServer>>;
@@ -15,6 +16,19 @@ let redis: Redis;
 let subscriber: Redis;
 let pipeline: ReturnType<typeof createPipeline>;
 let adminToken = '';
+
+/** Scripted stand-in for Gemini: each call takes the next reply from `aiScript` and records the request. */
+type AiReply = Awaited<ReturnType<ModelClient['generate']>>;
+let aiScript: ((req: Parameters<ModelClient['generate']>[0]) => AiReply)[] = [];
+const aiCalls: Parameters<ModelClient['generate']>[0][] = [];
+const fakeModel: ModelClient = {
+  async generate(req) {
+    aiCalls.push(structuredClone(req));
+    const next = aiScript.shift();
+    if (!next) throw new Error('fake model: no scripted reply left');
+    return next(req);
+  },
+};
 
 const ingest = async (...envelopes: unknown[]) => {
   for (const e of envelopes) pipeline.batcher.push(...normalize(e));
@@ -26,7 +40,7 @@ beforeAll(async () => {
   redis = createRedis('test');
   subscriber = createRedis('test-sub');
   pipeline = createPipeline({ redis, flushIntervalMs: 60_000, maxRows: 5000, maxBuffer: 50_000, alertCooldownMinutes: 0 });
-  app = await buildServer({ redis, subscriber });
+  app = await buildServer({ redis, subscriber, aiModel: fakeModel });
   await app.ready();
   await pool.query(`INSERT INTO users (email, password_hash, role) VALUES ('admin@test.local', $1, 'admin')`, [
     await hashPassword('admin-password-123'),
@@ -629,6 +643,97 @@ describe('websocket', () => {
     expect(mine(owner)).toEqual([expect.objectContaining({ type: 'zone_enter', zone_name: 'Carol Box' })]);
     expect(mine(other)).toHaveLength(0);
     expect(mine(anon)).toHaveLength(0);
+  });
+});
+
+describe('AI copilot', () => {
+  let token = '';
+  const auth = () => ({ authorization: `Bearer ${token}` });
+  const ask = (text: string, context: Record<string, unknown> = {}) =>
+    app.inject({ method: 'POST', url: '/api/ai/copilot', headers: auth(), payload: { messages: [{ role: 'user', text }], context } });
+  const call = (name: string, args: Record<string, unknown>, id = name) => ({ name, args, id });
+  const responsesIn = (req: { contents: { parts?: { functionResponse?: { name?: string; response?: Record<string, unknown> } }[] }[] }) =>
+    req.contents.flatMap((c) => c.parts ?? []).flatMap((p) => (p.functionResponse ? [p.functionResponse] : []));
+
+  beforeAll(async () => {
+    // Budget counters live in Redis per (Pacific) day and survive between test runs.
+    const keys = await redis.keys('ais_test:ai:*');
+    if (keys.length) await redis.del(...keys);
+    token = (await app.inject({
+      method: 'POST', url: '/api/auth/register', remoteAddress: '10.9.9.7', payload: { email: 'copilot-user@test.local', password: 'copilot-user-pass' },
+    })).json().access_token;
+  });
+
+  it('needs a signed-in user', async () => {
+    expect((await app.inject({ url: '/api/ai/status' })).statusCode).toBe(401);
+    const status = (await app.inject({ url: '/api/ai/status', headers: auth() })).json();
+    expect(status).toMatchObject({ enabled: true, usage: { user_used_today: 0, user_limit_today: 10 } });
+  });
+
+  it('answers with tools run as the user and returns map actions', async () => {
+    aiCalls.length = 0;
+    aiScript = [
+      () => ({ functionCalls: [call('search_ships', { query: 'browse', sort: 'name', limit: 2 }), call('list_zones', {})] }),
+      () => ({ functionCalls: [call('show_ship', { mmsi: 419500001 }), call('get_track_summary', { mmsi: 419500001, hours: 6 })] }),
+      () => ({ text: 'There are 3 BROWSE ships; BROWSE ALPHA (419500001) is open on the map.' }),
+    ];
+    const res = await ask('Find the browse ships and open the first', { bbox: [50, -25, 60, -15], zoom: 6 });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body).toMatchObject({ reply: expect.stringContaining('BROWSE ALPHA'), requests: 3, cached: false, usage: { user_used_today: 3 } });
+    expect(body.actions).toEqual([{ type: 'show_ship', mmsi: 419500001, name: 'BROWSE ALPHA', lat: -20.9, lon: 55.1 }]);
+    expect(body.ships.map((s: { mmsi: number }) => s.mmsi)).toEqual(expect.arrayContaining([419500001, 419500002]));
+
+    // The tool results the model saw: compact, and the view/system context was passed along.
+    const fromRound2 = responsesIn(aiCalls[1]!);
+    const search = fromRound2.find((r) => r.name === 'search_ships')!.response!.result as { total: number; ships: { name: string }[] };
+    expect(search.total).toBe(3);
+    expect(search.ships.map((s) => s.name)).toEqual(['BROWSE ALPHA', 'BROWSE BRAVO']);
+    const zones = fromRound2.find((r) => r.name === 'list_zones')!.response!.result as { zones: { name: string }[] };
+    expect(zones.zones.map((z) => z.name)).toContain('Reunion Box');
+    expect(zones.zones.map((z) => z.name)).not.toContain('Private Box'); // someone else's personal zone
+    const track = responsesIn(aiCalls[2]!).find((r) => r.name === 'get_track_summary')!.response!.result as { points: number };
+    expect(track.points).toBeGreaterThanOrEqual(1);
+    expect(aiCalls[0]!.systemInstruction).toContain('Current map view');
+    expect(aiCalls.map((c) => c.allowTools)).toEqual([true, true, true]);
+  });
+
+  it('answers a repeated question from the cache without calling Gemini', async () => {
+    aiCalls.length = 0;
+    const res = (await ask('Find the browse ships and open the first', { bbox: [50, -25, 60, -15], zoom: 6 })).json();
+    expect(res).toMatchObject({ cached: true, requests: 0, usage: { user_used_today: 3 } });
+    expect(res.actions).toHaveLength(1);
+    expect(aiCalls).toHaveLength(0);
+  });
+
+  it('turns bad tool arguments into errors the model can read, and forces an answer after the last round', async () => {
+    aiCalls.length = 0;
+    aiScript = [
+      () => ({ functionCalls: [call('search_ships', { zone_id: 'Reunion Box' })] }), // a name, not an id
+      () => ({ functionCalls: [call('get_ship', { mmsi: 999999999 })] }),
+      () => ({ functionCalls: [call('nope', {})] }),
+      (req) => ({ text: req.allowTools ? 'should not happen' : 'I could not find that.' }),
+    ];
+    const res = (await ask('loop forever')).json();
+    expect(res).toMatchObject({ reply: 'I could not find that.', requests: 4, actions: [] });
+    expect(aiCalls.map((c) => c.allowTools)).toEqual([true, true, true, false]);
+    // The last request carries the whole conversation, so every tool result once.
+    const errors = responsesIn(aiCalls[3]!).map((r) => r.response!.error);
+    expect(errors).toEqual(['zone_id must be an id from list_zones (not a name).', 'Ship not found.', 'Unknown tool nope.']);
+  });
+
+  it('stops at the per-user daily budget', async () => {
+    aiScript = [() => ({ text: 'one' }), () => ({ text: 'two' }), () => ({ text: 'three' })];
+    // 3 + 4 requests used above; the limit is 10.
+    expect((await ask('first new question')).statusCode).toBe(200);
+    expect((await ask('second new question')).statusCode).toBe(200);
+    expect((await ask('third new question')).statusCode).toBe(200);
+    const over = await ask('fourth new question');
+    expect(over.statusCode).toBe(429);
+    expect(over.json().error).toContain('10 AI requests');
+    expect(Number(over.headers['retry-after'])).toBeGreaterThan(0);
+    expect((await app.inject({ url: '/api/ai/status', headers: auth() })).json().usage.user_used_today).toBe(10);
+    aiScript = [];
   });
 });
 

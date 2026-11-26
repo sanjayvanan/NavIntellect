@@ -127,3 +127,18 @@ export const ExitFullscreenIcon = (p) => (
     <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
   </Svg>
 )
+
+export const SparkleIcon = (p) => (
+  // AI copilot: a four-point spark with a small companion
+  <Svg {...p}>
+    <path d="M10 3l1.8 4.7L16.5 9.5l-4.7 1.8L10 16l-1.8-4.7L3.5 9.5l4.7-1.8z" />
+    <path d="M18 14l.8 2.2 2.2.8-2.2.8L18 20l-.8-2.2-2.2-.8 2.2-.8z" />
+  </Svg>
+)
+
+export const SendIcon = (p) => (
+  <Svg {...p}>
+    <path d="M4 12l16-8-6 16-2.5-6.5z" />
+    <path d="M11.5 13.5L20 4" />
+  </Svg>
+)

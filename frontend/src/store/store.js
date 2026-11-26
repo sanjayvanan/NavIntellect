@@ -3,6 +3,7 @@ import themeReducer from './themeSlice'
 import shipReducer from './shipSlice'
 import authReducer from './authSlice'
 import alertsReducer from './alertsSlice'
+import copilotReducer from './copilotSlice'
 import { mapObjectsReducers } from '../features/mapObjects'
 import { settingsSync } from './settingsSync'
 import { errorMiddleware } from '../middleware/errorMiddleware'
@@ -13,6 +14,7 @@ export const store = configureStore({
     theme: themeReducer,
     ships: shipReducer,
     alerts: alertsReducer,
+    copilot: copilotReducer,
     ...mapObjectsReducers,
   },
   middleware: (getDefaultMiddleware) =>
@@ -43,6 +45,7 @@ if (import.meta.hot) {
       theme: newThemeModule?.default,
       ships: newShipModule?.default,
       alerts: alertsReducer,
+      copilot: copilotReducer,
       ...mapObjectsReducers,
     })
   })

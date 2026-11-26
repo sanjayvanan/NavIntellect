@@ -9,6 +9,8 @@ import { config } from '../config.js';
 import { logger } from '../shared/logger.js';
 import { attachUser } from './auth/guard.js';
 import { errorHandler } from './errors.js';
+import type { ModelClient } from '../ai/copilot.js';
+import { aiRoutes } from './routes/ai.js';
 import { alertRoutes } from './routes/alerts.js';
 import { authRoutes } from './routes/auth.js';
 import { preferenceRoutes } from './routes/preferences.js';
@@ -21,7 +23,8 @@ import { zoneRoutes } from './routes/zones.js';
 import { ShipCache } from './shipCache.js';
 import { wsRoutes } from './ws.js';
 
-export async function buildServer(deps: { redis: Redis; subscriber: Redis }) {
+/** `aiModel` replaces Gemini (tests). */
+export async function buildServer(deps: { redis: Redis; subscriber: Redis; aiModel?: ModelClient }) {
   const app = Fastify({
     loggerInstance: logger,
     trustProxy: true,
@@ -54,6 +57,7 @@ export async function buildServer(deps: { redis: Redis; subscriber: Redis }) {
   await app.register(userRoutes);
   await app.register(preferenceRoutes);
   await app.register(annotationRoutes);
+  await app.register(aiRoutes, { redis: deps.redis, model: deps.aiModel });
   await app.register(wsRoutes, { subscriber: deps.subscriber });
 
   return app;

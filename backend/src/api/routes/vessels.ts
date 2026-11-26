@@ -19,6 +19,13 @@ const browseQuery = z.object({
   zone_id: z.uuid().optional(),
   /** Heard within this many hours; the map shows the last 50 h, so the default matches it. */
   hours: z.coerce.number().positive().max(720).default(50),
+  /** Only ships inside this box (minLon,minLat,maxLon,maxLat). */
+  bbox: bboxParam.optional(),
+  /** Speed over ground range, knots. */
+  min_sog: z.coerce.number().min(0).max(100).optional(),
+  max_sog: z.coerce.number().min(0).max(100).optional(),
+  /** Ship type label contains this, e.g. "tanker", "cargo", "fishing". */
+  type: z.string().trim().min(2).max(40).optional(),
   sort: z.enum(['recent', 'name', 'speed']).default('recent'),
   offset: z.coerce.number().int().min(0).max(100_000).default(0),
   limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -115,6 +122,22 @@ export async function vesselRoutes(app: FastifyInstance) {
       zone = rows[0];
       params.push(q.zone_id);
       zoneJoin = `JOIN zones z ON z.id = $${params.length} AND ST_Covers(z.geom, l.geom)`;
+    }
+    if (q.bbox) {
+      params.push(...q.bbox);
+      where.push(bboxSql('l', params.length - 3));
+    }
+    if (q.min_sog !== undefined) {
+      params.push(q.min_sog);
+      where.push(`l.sog >= $${params.length}`);
+    }
+    if (q.max_sog !== undefined) {
+      params.push(q.max_sog);
+      where.push(`l.sog <= $${params.length}`);
+    }
+    if (q.type) {
+      params.push(q.type.replace(/[\\%_]/g, (c) => '\\' + c));
+      where.push(`v.ship_type_label ILIKE '%' || $${params.length} || '%'`);
     }
     const orders = {
       recent: 'l.ts DESC',

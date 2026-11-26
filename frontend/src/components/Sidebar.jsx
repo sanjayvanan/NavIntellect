@@ -16,6 +16,7 @@ import {
   RouteIcon,
   SettingsIcon,
   ShapesIcon,
+  SparkleIcon,
 } from './Icons'
 import { useMap } from 'react-leaflet'
 import L from 'leaflet'
@@ -25,15 +26,17 @@ import AccountPanel from './AccountPanel'
 import { MapObjectsPanel } from '../features/mapObjects'
 import NotificationsPanel from './NotificationsPanel'
 import TrackInfoPanel from './TrackInfoPanel'
+import CopilotPanel from './CopilotPanel'
 import { selectUnreadCount } from '../store/alertsSlice'
 import BrandMark from './BrandMark'
 import './Sidebar.css'
 
 // Rail buttons that open a panel, and those whose panel is tall (placed at the top, full height).
-const PANELS = new Set(['mapType', 'objects', 'settings', 'notifications', 'trackInfo'])
-const TALL_PANELS = new Set(['objects', 'notifications', 'trackInfo'])
+const PANELS = new Set(['copilot', 'mapType', 'objects', 'settings', 'notifications', 'trackInfo'])
+const TALL_PANELS = new Set(['copilot', 'objects', 'notifications', 'trackInfo'])
 
 const sidebarButtons = [
+  { id: 'copilot', Icon: SparkleIcon, label: 'AI copilot' },
   { id: 'mapType', Icon: LayersIcon, label: 'Map layers' },
   { id: 'objects', Icon: ShapesIcon, label: 'Graphical objects' },
   { id: 'settings', Icon: SettingsIcon, label: 'Settings' },
@@ -96,6 +99,15 @@ function Sidebar({ rail, fullscreen }) {
       return 'objects'
     })
   }, [selection, objectCommand, dispatch])
+
+  // The copilot can open the ship list with a search/zone filter (TrackInfoPanel applies it).
+  const shipListRequest = useSelector((state) => state.copilot.shipListRequest)
+  useEffect(() => {
+    if (!shipListRequest) return
+    if (collapsedRef.current) dispatch(toggleSidebar())
+    setButtonPosition({ top: 12 })
+    setPanel('trackInfo')
+  }, [shipListRequest, dispatch])
 
   const handleSidebarClick = (buttonId, event) => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -205,6 +217,8 @@ function Sidebar({ rail, fullscreen }) {
       {panel === 'notifications' && <NotificationsPanel style={panelStyle} theme={theme} onClose={closePanels} />}
 
       {panel === 'trackInfo' && <TrackInfoPanel style={tallStyle} theme={theme} onClose={closePanels} />}
+
+      {panel === 'copilot' && <CopilotPanel style={tallStyle} theme={theme} onClose={closePanels} />}
 
       {panel === 'mapType' && (
         <div className={`layer-control-panel ${theme}`} style={panelStyle}>

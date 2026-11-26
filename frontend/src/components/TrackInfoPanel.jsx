@@ -59,6 +59,17 @@ function TrackInfoPanel({ style, theme, onClose }) {
     L.DomEvent.disableScrollPropagation(ref.current)
   }, [])
 
+  // Filters asked for by the AI copilot (also when the panel is already open).
+  const request = useSelector((state) => state.copilot.shipListRequest)
+  useEffect(() => {
+    // Only a request made just now: opening the panel later by hand starts unfiltered.
+    if (!request || Date.now() - request.at > 3000) return
+    setText(request.query ?? '')
+    setQ(request.query ?? '')
+    setZoneId(request.zone_id ?? '')
+    setSort(request.sort ?? 'recent')
+  }, [request])
+
   // Search text -> query, debounced.
   useEffect(() => {
     const t = setTimeout(() => setQ(text.trim()), DEBOUNCE_MS)

@@ -54,6 +54,20 @@ const schema = z.object({
   AIS_GAP_MINUTES: z.coerce.number().positive().default(30),
   ALERT_COOLDOWN_MINUTES: z.coerce.number().nonnegative().default(15),
 
+  // AI copilot (Gemini). Without a key the AI features are switched off; the rest works as before.
+  GEMINI_API_KEY: z.string().default(''),
+  /** Fast, cheap stable model; change it here when Google retires it (see docs/AI_FEATURES.md). */
+  GEMINI_MODEL: z.string().default('gemini-3.5-flash-lite'),
+  /**
+   * Free-tier budget, counted in Gemini requests (one copilot question = 1-4 requests).
+   * Set these at or below your project's limits shown in Google AI Studio (aistudio.google.com/rate-limit).
+   */
+  AI_DAILY_LIMIT: z.coerce.number().int().min(1).default(100),
+  AI_USER_DAILY_LIMIT: z.coerce.number().int().min(1).default(30),
+  AI_RPM: z.coerce.number().int().min(1).default(8),
+  /** Tool rounds per question before the model must answer (each round is one more request). */
+  AI_MAX_TOOL_ROUNDS: z.coerce.number().int().min(1).max(5).default(3),
+
   ADMIN_EMAIL: z.string().optional(),
   ADMIN_PASSWORD: z.string().optional(),
 });

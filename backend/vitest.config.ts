@@ -15,6 +15,12 @@ export default defineConfig({
       JWT_SECRET: 'test-secret-test-secret-test-secret-1234',
       AUTH_REQUIRED_FOR_READS: 'false',
       ALERT_COOLDOWN_MINUTES: '0',
+      // Never call the real Gemini API from tests: they use a scripted fake model.
+      GEMINI_API_KEY: '',
+      AI_DAILY_LIMIT: '1000',
+      AI_USER_DAILY_LIMIT: '10',
+      AI_RPM: '1000',
+      AI_MAX_TOOL_ROUNDS: '3',
     },
   },
 });
