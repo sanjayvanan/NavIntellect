@@ -187,6 +187,16 @@ describe('vessels and tracks', () => {
     const track = (await app.inject({ url: `/api/vessels/${mmsi}/track?from=${minsAgo(360).toISOString()}` })).json();
     expect(track.properties.points).toBe(7);
     expect(track.geometry.coordinates[0]).toEqual([70.654321, 20.123456]);
+    expect(track.properties.times).toHaveLength(7);
+
+    // Simplified (Douglas–Peucker): fewer or equal points, each still with its time; same ends.
+    const simple = (await app.inject({ url: `/api/vessels/${mmsi}/track?tolerance=0.0004&from=${minsAgo(360).toISOString()}` })).json();
+    expect(simple.properties).toMatchObject({ resolution: 'simplified', points: 7, tolerance: 0.0004 });
+    expect(simple.properties.returned).toBeLessThanOrEqual(7);
+    expect(simple.properties.times).toHaveLength(simple.geometry.coordinates.length);
+    expect(Array.isArray(simple.properties.breaks)).toBe(true);
+    expect(simple.geometry.coordinates[0]).toEqual(track.geometry.coordinates[0]);
+    expect(simple.geometry.coordinates.at(-1)).toEqual(track.geometry.coordinates.at(-1));
 
     // Area query hits packed and raw data, and misses elsewhere.
     const area = (await app.inject({ url: `/api/tracks/area?bbox=70.5,20,71.2,20.7&from=${minsAgo(360).toISOString()}` })).json();

@@ -6,7 +6,8 @@ import { zoomToBounds } from './navigation'
 // The ship arrow from assets/ShipIcon.svg (viewBox 38x33, nose pointing east), centred.
 const ARROW = [[37, 16.6], [1.2, 1.7], [8.1, 16.6], [1.2, 31.6]].map(([x, y]) => [x - 19, y - 16.6])
 const SELECTED_COLOR = '#f44336'
-const HIT_RADIUS_PX = 10
+// How close a tap/click must be to a ship to pick it: a fingertip needs more room than a mouse.
+const HIT_RADIUS_PX = window.matchMedia?.('(pointer: coarse)').matches ? 20 : 10
 
 // Clustering: ships within the same CLUSTER_CELL_PX square (in world pixels, so clusters stay
 // stable while panning) are drawn as one bubble, until CLUSTER_MAX_ZOOM. The grid uses the

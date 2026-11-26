@@ -1,5 +1,7 @@
 /* eslint-disable react/prop-types -- internal component; the project does not use PropTypes */
 import { useState, useEffect, useRef } from 'react'
+import { usePhoneLayout } from '../hooks/usePhoneLayout'
+import { attachSwipeToClose } from '../utils/swipeToClose'
 import { createPortal } from 'react-dom'
 import { useSelector, useDispatch } from 'react-redux'
 import { setBaseLayer, toggleClustering, toggleOverlay, toggleSidebar } from '../store/themeSlice'
@@ -35,6 +37,16 @@ import './Sidebar.css'
 const PANELS = new Set(['copilot', 'mapType', 'objects', 'settings', 'notifications', 'trackInfo'])
 const TALL_PANELS = new Set(['copilot', 'objects', 'notifications', 'trackInfo'])
 
+// Phones: five labelled tabs; everything else is under "More".
+const PHONE_TABS = [
+  { id: 'copilot', Icon: AiSparkIcon, label: 'AI' },
+  { id: 'trackInfo', Icon: ChartIcon, label: 'Ships' },
+  { id: 'notifications', Icon: BellIcon, label: 'Alerts' },
+  { id: 'objects', Icon: ShapesIcon, label: 'Zones' },
+  { id: 'more', Icon: MenuIcon, label: 'More' },
+]
+const MORE_PANELS = new Set(['more', 'mapType', 'settings', 'account'])
+
 const sidebarButtons = [
   { id: 'copilot', Icon: AiSparkIcon, label: 'AI copilot' },
   { id: 'mapType', Icon: LayersIcon, label: 'Map layers' },
@@ -64,6 +76,13 @@ function Sidebar({ rail, fullscreen }) {
   const objectCommand = useSelector((state) => state.mapObjectsUi.command)
   const [buttonPosition, setButtonPosition] = useState({ top: 0 })
   const map = useMap()
+  const phone = usePhoneLayout()
+
+  // Phones: panels are bottom sheets; drag one down by its top to close it.
+  useEffect(() => {
+    if (!phone || !rail) return
+    return attachSwipeToClose(rail, { sheetSelector: '.layer-control-panel', onClose: () => setPanel(null) })
+  }, [phone, rail])
 
   // Base map: one tile layer, swapped when the (saved) choice changes. Restored on sign-in.
   useEffect(() => {
@@ -124,14 +143,46 @@ function Sidebar({ rail, fullscreen }) {
 
   if (!rail) return null
   const closePanels = () => setPanel(null)
-  const panelStyle = { top: buttonPosition.top, maxHeight: `calc(100vh - ${buttonPosition.top + 12}px)` }
+  // Phones: bottom sheets placed by CSS; lists get a definite height so they scroll inside.
+  const panelStyle = phone ? {} : { top: buttonPosition.top, maxHeight: `calc(100vh - ${buttonPosition.top + 12}px)` }
   // The ship list scrolls inside the panel, so it needs a definite height.
-  const tallStyle = { ...panelStyle, height: panelStyle.maxHeight }
+  const tallStyle = phone ? { height: '72vh' } : { ...panelStyle, height: panelStyle.maxHeight }
+  const openPanel = (id) => setPanel((open) => (open === id ? null : id))
   const isActive = (id) => panel === id
   const showAccount = panel === 'account'
 
+  const phoneNav = (
+    <nav className={`sidebar phone-tabs ${theme}`} aria-label="Map tools">
+      {PHONE_TABS.map(({ id, Icon, label }) => {
+        const active = id === 'more' ? MORE_PANELS.has(panel) : panel === id
+        const badge = id === 'notifications' && unread > 0 ? (unread > 99 ? '99+' : String(unread)) : null
+        return (
+          <button
+            key={id}
+            type="button"
+            className={`tab-button ${id === 'copilot' ? 'ai' : ''} ${active ? 'active' : ''}`}
+            onClick={() => openPanel(id === 'more' && MORE_PANELS.has(panel) ? panel : id)}
+            aria-label={badge ? `${label} (${unread} new)` : label}
+            aria-pressed={active}
+          >
+            <span className="tab-icon">
+              <Icon />
+              {badge && (
+                <span className="sidebar-badge" aria-hidden="true">
+                  {badge}
+                </span>
+              )}
+            </span>
+            <span className="tab-label">{label}</span>
+          </button>
+        )
+      })}
+    </nav>
+  )
+
   return createPortal(
     <>
+      {phone ? phoneNav : (
       <nav className={`sidebar ${theme}`} aria-label="Map tools">
         <BrandMark theme={theme} />
         {/* Same icon and position as the floating "show sidebar" button, so the toggle never moves. */}
@@ -207,6 +258,53 @@ function Sidebar({ rail, fullscreen }) {
           </button>
         </div>
       </nav>
+      )}
+
+      {panel === 'more' && (
+        <div className={`layer-control-panel more-panel ${theme}`}>
+          <div className="panel-header">
+            <span>More</span>
+            <button className="panel-close" onClick={closePanels} aria-label="Close">
+              <CloseIcon size={16} />
+            </button>
+          </div>
+          <button type="button" className="more-row" onClick={() => setPanel('mapType')}>
+            <LayersIcon />
+            <span>
+              Map layers
+              <small>{activeLayer}</small>
+            </span>
+          </button>
+          <button type="button" className="more-row" onClick={() => setPanel('settings')}>
+            <SettingsIcon />
+            <span>
+              Settings
+              <small>Ship density, names, dark mode</small>
+            </span>
+          </button>
+          <label className="more-row">
+            <ClusterIcon />
+            <span>
+              Group ships
+              <small>Count bubbles when zoomed out</small>
+            </span>
+            <input type="checkbox" className="more-switch" checked={clustering} onChange={() => dispatch(toggleClustering())} />
+          </label>
+          {fullscreen?.supported && (
+            <button type="button" className="more-row" onClick={fullscreen.toggle}>
+              {fullscreen.isFullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}
+              <span>{fullscreen.isFullscreen ? 'Exit full screen' : 'Full screen'}</span>
+            </button>
+          )}
+          <button type="button" className="more-row" onClick={() => setPanel('account')}>
+            <span className="more-avatar">{initials(user)}</span>
+            <span>
+              {displayName(user)}
+              <small>Account and sign out</small>
+            </span>
+          </button>
+        </div>
+      )}
 
       {showAccount && <AccountPanel user={user} theme={theme} onClose={closePanels} />}
 

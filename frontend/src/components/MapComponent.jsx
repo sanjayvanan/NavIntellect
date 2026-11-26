@@ -6,6 +6,7 @@ import AlertCenter from './AlertCenter'
 import { MapObjectsLayers } from '../features/mapObjects'
 import MapContextMenu from './MapContextMenu'
 import ZoomControl from './ZoomControl'
+import LocateControl from './LocateControl'
 import MapAutoResize from './MapAutoResize'
 import MapViewPersistence from './MapViewPersistence'
 import 'leaflet/dist/leaflet.css'
@@ -51,6 +52,7 @@ function MapComponent({ children }) {
       <AlertCenter />
       
       <ZoomControl />
+      <LocateControl />
       <BottomBar />
     </MapContainer>
   )

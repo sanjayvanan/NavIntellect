@@ -13,6 +13,9 @@ import { boundsToBbox } from '../utils/mapBbox'
 import { ShipCanvasLayer } from '../map/ShipCanvasLayer'
 import { zoomToPoint } from '../map/navigation'
 import SearchBox from './SearchBox'
+import { CloseIcon } from './Icons'
+import { usePhoneLayout } from '../hooks/usePhoneLayout'
+import { attachSwipeToClose } from '../utils/swipeToClose'
 import { DENSITY_LEVELS } from '../config/shipDensity'
 import { toDMS } from '../utils/coords'
 
@@ -384,9 +387,12 @@ function ShipLayer() {
   })
   const popupRef = useRef(null)
   const selectedMmsi = liveSelected?.latitude != null ? liveSelected.mmsi : null
+  // Phones: the details are a bottom sheet (below), not a popup over the map.
+  const phone = usePhoneLayout()
+  const [sheet, setSheet] = useState(null)
 
   useEffect(() => {
-    if (selectedMmsi == null) return
+    if (selectedMmsi == null || phone) return
     const s = selectedRef.current
     const popup = L.popup({ offset: [0, -10], autoPan: false, maxWidth: 320 })
       .setLatLng([s.latitude, s.longitude])
@@ -429,7 +435,35 @@ function ShipLayer() {
       map.closePopup(popup)
       popupRef.current = null
     }
-  }, [selectedMmsi, map, dispatch, popupEl])
+  }, [selectedMmsi, map, dispatch, popupEl, phone])
+
+  // Phone sheet: drag it down to close, and keep the ship visible above it (also after a zoom
+  // to the ship from search, the copilot or a notification finishes).
+  useEffect(() => {
+    if (!sheet) return
+    const stopSwipe = attachSwipeToClose(sheet, { sheetSelector: '.ship-sheet', onClose: () => dispatch(setSelectedShip(null)) })
+    const showShip = () => {
+      const s = selectedRef.current
+      if (s?.latitude == null) return
+      const view = map.getContainer().getBoundingClientRect()
+      const top = 80 // below the search box
+      const bottom = sheet.getBoundingClientRect().top - view.top - 40
+      const p = map.latLngToContainerPoint([s.latitude, s.longitude])
+      if (p.y >= top && p.y <= bottom && p.x >= 24 && p.x <= view.width - 24) return
+      const target = L.point(view.width / 2, Math.max(top, (top + bottom) / 2))
+      map.panBy(p.subtract(target))
+    }
+    const frame = requestAnimationFrame(showShip)
+    const afterMove = () => requestAnimationFrame(showShip)
+    map.on('moveend', afterMove)
+    const stop = setTimeout(() => map.off('moveend', afterMove), 3000)
+    return () => {
+      stopSwipe()
+      cancelAnimationFrame(frame)
+      clearTimeout(stop)
+      map.off('moveend', afterMove)
+    }
+  }, [sheet, map, dispatch])
 
   useEffect(() => {
     if (!popupRef.current || liveSelected?.latitude == null) return
@@ -458,7 +492,7 @@ function ShipLayer() {
           </div>
         </div>
       )}
-      {selectedMmsi != null &&
+      {selectedMmsi != null && !phone &&
         createPortal(
           renderShipPopup(
             liveSelected,
@@ -471,6 +505,25 @@ function ShipLayer() {
             />,
           ),
           popupEl,
+        )}
+      {selectedMmsi != null && phone &&
+        createPortal(
+          <div ref={setSheet} className={`ship-sheet ${theme}`} role="dialog" aria-label={`Ship details: ${liveSelected.track_name || liveSelected.mmsi}`}>
+            <button type="button" className="ship-sheet-close" onClick={() => dispatch(setSelectedShip(null))} aria-label="Close">
+              <CloseIcon size={18} />
+            </button>
+            {renderShipPopup(
+            liveSelected,
+            theme,
+            <TrackHistoryRow
+              ship={liveSelected}
+              track={track}
+              onShow={(hours) => dispatch(showTrack({ mmsi: liveSelected.mmsi, hours }))}
+              onHide={() => dispatch(hideTrack())}
+            />,
+          )}
+          </div>,
+          document.body,
         )}
     </>
   )

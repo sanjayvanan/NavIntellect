@@ -121,6 +121,17 @@ describe('track history', () => {
     expect(t.segments).toEqual([[[13.60, 100.50], [13.61, 100.51]], [[13.80, 100.55], [13.80, 100.55], [13.80, 100.551]]])
   })
 
+  it('uses the gaps the server found when the track is simplified', () => {
+    const min = 60_000
+    // Simplified: a 40-minute straight stretch (middle points dropped) is not a gap; index 2 is.
+    const t = trackToLatLngs({
+      geometry: { type: 'LineString', coordinates: [[100.5, 13.6], [100.5, 13.8], [100.6, 13.9]] },
+      properties: { times: [0, 40 * min, 90 * min], breaks: [2] },
+    })
+    expect(t.gaps).toEqual([{ from: [13.8, 100.5], to: [13.9, 100.6], minutes: 50 }])
+    expect(t.segments).toEqual([[[13.6, 100.5], [13.8, 100.5]], [[13.9, 100.6]]])
+  })
+
   it('shows the track for the selected ship only', () => {
     let s = shipReducer(undefined, setSelectedShip({ mmsi: 1, latitude: 0, longitude: 0 }))
     s = shipReducer(s, showTrack({ mmsi: 1, hours: 6 }))

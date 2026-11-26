@@ -1,3 +1,4 @@
+import { M_PER_DEG, optimizeTrack, type TrackPoint } from '../../shared/simplify.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { LEGACY_SHIP_COLUMNS } from '../../db/legacy.js';
@@ -56,7 +57,10 @@ function searchSql(text: string, params: unknown[]) {
 const trackQuery = z.object({
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
-  /** Douglas-Peucker tolerance in degrees (e.g. 0.0005 ≈ 50 m). Times are omitted when simplifying. */
+  /**
+   * Douglas–Peucker tolerance in degrees (0.0004 ≈ 44 m; measured on the ground at any latitude);
+   * 0 = every stored position. Kept points keep their times; gaps in reception are in `breaks`.
+   */
   tolerance: z.coerce.number().min(0).max(1).default(0),
   /** Accepted for backward compatibility; history is always returned at stored resolution. */
   resolution: z.enum(['auto', 'raw', '1m']).default('auto'),
@@ -209,30 +213,37 @@ export async function vesselRoutes(app: FastifyInstance) {
       FROM vessel_positions p, wm
       WHERE p.mmsi = $1 AND p.ts >= GREATEST($2, wm.v) AND p.ts <= $3`;
 
-    const { rows } = await pool.query<{ geometry: unknown; times: number[] | null; points: number; max_sog: number | null }>(
-      `${WATERMARK_CTE},
-       p AS (SELECT ts, ST_SetSRID(ST_MakePoint(lon, lat), 4326) AS geom, sog FROM (${source}) s ORDER BY ts),
-       line AS (SELECT ST_MakeLine(geom ORDER BY ts) AS g FROM p)
-       SELECT
-         CASE WHEN (SELECT count(*) FROM p) = 0 THEN NULL
-              WHEN (SELECT count(*) FROM p) = 1 THEN ST_AsGeoJSON((SELECT geom FROM p LIMIT 1), 6)::json
-              ELSE ST_AsGeoJSON(CASE WHEN $4 > 0 THEN ST_SimplifyPreserveTopology(line.g, $4) ELSE line.g END, 6)::json
-         END AS geometry,
-         CASE WHEN $4 > 0 THEN NULL ELSE (SELECT array_agg((extract(epoch FROM ts) * 1000)::float8 ORDER BY ts) FROM p) END AS times,
-         (SELECT count(*)::int FROM p) AS points,
-         (SELECT round(max(sog)::numeric, 1)::float8 FROM p) AS max_sog
-       FROM line`,
-      [mmsi, from, to, q.tolerance],
+    const { rows } = await pool.query<{ ts: number; lat: number; lon: number; sog: number | null }>(
+      `${WATERMARK_CTE}
+       SELECT (extract(epoch FROM ts) * 1000)::float8 AS ts, lat, lon, sog FROM (${source}) s ORDER BY ts`,
+      [mmsi, from, to],
     );
-    const r = rows[0]!;
+    const raw: TrackPoint[] = rows;
+    // Douglas–Peucker: tolerance in degrees as before (0.0004 ≈ 44 m), measured in metres on the
+    // ground. Gaps in reception are kept and listed in `breaks` (see shared/simplify.ts).
+    const { points, breaks } = q.tolerance > 0 ? optimizeTrack(raw, q.tolerance * M_PER_DEG) : { points: raw, breaks: null };
+    const coord = (p: TrackPoint) => [Math.round(p.lon * 1e6) / 1e6, Math.round(p.lat * 1e6) / 1e6];
+    const sogs = raw.map((p) => p.sog).filter((v): v is number => v != null);
     return {
       type: 'Feature',
-      geometry: r.geometry,
-      properties: { mmsi, from: from.toISOString(), to: to.toISOString(), resolution: 'full', points: r.points, max_sog: r.max_sog, times: r.times },
+      geometry:
+        points.length === 0 ? null
+        : points.length === 1 ? { type: 'Point', coordinates: coord(points[0]!) }
+        : { type: 'LineString', coordinates: points.map(coord) },
+      properties: {
+        mmsi,
+        from: from.toISOString(),
+        to: to.toISOString(),
+        resolution: q.tolerance > 0 ? 'simplified' : 'full',
+        points: raw.length, // positions in the period (before simplifying)
+        returned: points.length,
+        tolerance: q.tolerance,
+        max_sog: sogs.length ? Math.round(sogs.reduce((m, v) => (v > m ? v : m), -Infinity) * 10) / 10 : null,
+        times: points.map((p) => p.ts),
+        ...(breaks ? { breaks } : {}),
+      },
     };
   });
-  // Which vessels were inside this area during [from, to]? Block bounding boxes (GIST) narrow the
-  // candidates, then individual points are checked. Default window: the last 6 hours.
   app.get('/api/tracks/area', { preHandler: readAccess }, async (req) => {
     const q = parse(areaQuery, req.query);
     const [minLon, minLat, maxLon, maxLat] = q.bbox;

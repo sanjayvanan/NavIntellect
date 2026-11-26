@@ -161,6 +161,15 @@ export const ChatsIcon = (p) => (
   </Svg>
 )
 
+export const LocateIcon = (p) => (
+  // "my location": a target with a centre dot
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="6.5" />
+    <circle cx="12" cy="12" r="2" fill="currentColor" />
+    <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" />
+  </Svg>
+)
+
 export const SendIcon = (p) => (
   <Svg {...p}>
     <path d="M4 12l16-8-6 16-2.5-6.5z" />

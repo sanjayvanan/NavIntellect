@@ -80,7 +80,9 @@ function TrackLayer() {
         if (bounds.isValid() && !map.getBounds().contains(bounds)) {
           // Then let the ship popup move back into view (see ShipLayer: 'shippopup:fit').
           map.once('moveend', () => map.fire('shippopup:fit'))
-          map.fitBounds(bounds, { padding: [60, 60], maxZoom: 13 })
+          // On phones the ship details sheet covers the bottom of the map: keep the track above it.
+          const sheet = document.querySelector('.ship-sheet')?.offsetHeight ?? 0
+          map.fitBounds(bounds, { paddingTopLeft: [40, 90], paddingBottomRight: [40, sheet + 40], maxZoom: 13 })
         }
       }
       return points.length
@@ -90,7 +92,9 @@ function TrackLayer() {
       try {
         const feature = await fetchTrack(mmsi, hours)
         if (cancelled) return
-        dispatch(trackStatus({ mmsi, status: 'ready', points: draw(feature) }))
+        const drawn = draw(feature)
+        // Positions heard in the period (the line itself may be simplified to fewer points).
+        dispatch(trackStatus({ mmsi, status: 'ready', points: drawn ? (feature.properties?.points ?? drawn) : 0 }))
       } catch (err) {
         if (cancelled) return
         dispatch(trackStatus({ mmsi, status: 'failed', error: err.message || 'Could not load the track' }))

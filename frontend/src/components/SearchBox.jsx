@@ -3,6 +3,7 @@ import { useSelector, useDispatch } from 'react-redux'
 import { API_BASE_URL, upsertShips } from '../store/shipSlice'
 import { useIsolateFromMap } from '../hooks/useIsolateFromMap'
 import { CloseIcon, SearchIcon } from './Icons'
+import { usePhoneLayout } from '../hooks/usePhoneLayout'
 import './SearchBox.css'
 
 const MIN_CHARS = 2
@@ -24,6 +25,7 @@ const timeAgo = (ms) => {
 function SearchBox() {
   const dispatch = useDispatch()
   const theme = useSelector((state) => state.theme.mode)
+  const phone = usePhoneLayout()
   const [searchTerm, setSearchTerm] = useState('')
   const [results, setResults] = useState([])
   const [isVisible, setIsVisible] = useState(false)
@@ -118,7 +120,7 @@ function SearchBox() {
             }}
             onFocus={() => setIsVisible(true)}
             onKeyDown={handleKeyDown}
-            placeholder="Search ships: name, MMSI, IMO, callsign"
+            placeholder={phone ? "Search ships by name or number" : "Search ships: name, MMSI, IMO, callsign"}
             className="search-input"
             autoComplete="off"
             spellCheck={false}

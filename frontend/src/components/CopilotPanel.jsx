@@ -5,11 +5,22 @@ import { useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { askCopilot, clearConversation, deleteChat, linkShips, loadCopilotStatus, openChat, requestShipList } from '../store/copilotSlice'
 import { timeAgo } from '../utils/alertText'
+import { usePhoneLayout } from '../hooks/usePhoneLayout'
 import { showTrack } from '../store/shipSlice'
 import { zoomToPoint } from '../map/navigation'
 import { boundsToBbox } from '../utils/mapBbox'
 import { AiSparkIcon, ChatsIcon, CloseIcon, PlusIcon, SendIcon } from './Icons'
 import './CopilotPanel.css'
+
+// Touch screens: focusing the text box pops up the on-screen keyboard over the panel, so it is
+// only focused when the user taps it (on a laptop it is focused straight away, ready to type).
+const focusUnlessTouch = (el) => {
+  if (!window.matchMedia?.('(pointer: coarse)').matches) el?.focus()
+}
+
+// Tapping Send must not take the focus from the text box: on a phone that closes the keyboard,
+// the panel jumps back down, and the tap can miss the button.
+const keepFocus = (e) => e.preventDefault()
 
 const SUGGESTIONS = [
   'How many ships are in my view right now?',
@@ -81,6 +92,37 @@ function ChatList({ chats, activeChatId, busy, onOpen, onDelete }) {
   )
 }
 
+/**
+ * Phones, while the on-screen keyboard is open: the part of the screen above it
+ * ({ top, height } in px, from window.visualViewport), else null. iOS does not shrink the page
+ * for the keyboard; it slides the page up instead, which would carry this bottom sheet (and what
+ * you are typing) off the top of the screen. The panel is placed in this area instead.
+ */
+function useKeyboardArea(active) {
+  const [area, setArea] = useState(null)
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!active || !vv) {
+      setArea(null)
+      return
+    }
+    const update = () => {
+      const open = vv.height < window.innerHeight * 0.85
+      setArea(open ? { top: Math.round(vv.offsetTop), height: Math.round(vv.height) } : null)
+    }
+    update()
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    return () => {
+      vv.removeEventListener('resize', update)
+      vv.removeEventListener('scroll', update)
+      // Undo the slide-up iOS may leave behind once the keyboard has gone.
+      setTimeout(() => window.scrollTo(0, 0), 50)
+    }
+  }, [active])
+  return area
+}
+
 function Answer({ message, onShip }) {
   const parts = linkShips(message.text, message.ships)
   return (
@@ -109,6 +151,9 @@ function CopilotPanel({ style, theme, onClose }) {
   const runAction = useMapActions()
   const { enabled, usage, messages, busy, model, chats, activeChatId } = useSelector((state) => state.copilot)
   const [showChats, setShowChats] = useState(false)
+  const phone = usePhoneLayout()
+  const [typing, setTyping] = useState(false) // the text box has focus
+  const keyboard = useKeyboardArea(phone && typing)
   const selected = useSelector((state) => state.ships.selectedShip)
   const [text, setText] = useState('')
   const ref = useRef(null)
@@ -121,8 +166,13 @@ function CopilotPanel({ style, theme, onClose }) {
     L.DomEvent.disableClickPropagation(ref.current)
     L.DomEvent.disableScrollPropagation(ref.current)
     dispatch(loadCopilotStatus())
-    inputRef.current?.focus()
+    focusUnlessTouch(inputRef.current)
   }, [dispatch])
+
+  // Keyboard opened or resized: keep the latest messages in view above the text box.
+  useEffect(() => {
+    if (keyboard) listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
+  }, [keyboard?.height]) // eslint-disable-line react-hooks/exhaustive-deps -- only on size changes
 
   // Carry out the map actions of each new answer once.
   useEffect(() => {
@@ -155,7 +205,11 @@ function CopilotPanel({ style, theme, onClose }) {
   const left = usage ? Math.max(0, usage.user_limit_today - usage.user_used_today) : null
 
   return (
-    <div ref={ref} className={`layer-control-panel copilot-panel ${theme}`} style={style}>
+    <div
+      ref={ref}
+      className={`layer-control-panel copilot-panel ${theme} ${keyboard ? 'cp-keyboard' : ''}`}
+      style={keyboard ? { ...style, '--kb-top': `${keyboard.top}px`, '--kb-height': `${keyboard.height}px` } : style}
+    >
       <div className="panel-header">
         <span className="cp-title">
           <AiSparkIcon size={18} /> AI copilot
@@ -172,7 +226,6 @@ function CopilotPanel({ style, theme, onClose }) {
                 title="Saved chats"
               >
                 <ChatsIcon size={16} />
-                {chats.length > 0 && <span className="cp-count">{chats.length}</span>}
               </button>
               <button
                 type="button"
@@ -180,7 +233,7 @@ function CopilotPanel({ style, theme, onClose }) {
                 onClick={() => {
                   dispatch(clearConversation())
                   setShowChats(false)
-                  inputRef.current?.focus()
+                  focusUnlessTouch(inputRef.current)
                 }}
                 disabled={busy || (messages.length === 0 && !showChats)}
                 aria-label="New chat"
@@ -276,6 +329,8 @@ function CopilotPanel({ style, theme, onClose }) {
               maxLength={2000}
               placeholder={busy ? 'Thinking…' : 'Ask about ships, zones or alerts…'}
               onChange={(e) => setText(e.target.value)}
+              onFocus={() => setTyping(true)}
+              onBlur={() => setTyping(false)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
@@ -285,11 +340,11 @@ function CopilotPanel({ style, theme, onClose }) {
               aria-label="Ask the AI copilot"
             />
             {busy ? (
-              <button type="button" className="cp-send" onClick={() => requestRef.current?.abort()} aria-label="Stop">
+              <button type="button" className="cp-send" onPointerDown={keepFocus} onClick={() => requestRef.current?.abort()} aria-label="Stop">
                 <CloseIcon size={16} />
               </button>
             ) : (
-              <button type="submit" className="cp-send" disabled={!text.trim() || enabled == null} aria-label="Send">
+              <button type="submit" className="cp-send" onPointerDown={keepFocus} disabled={!text.trim() || enabled == null} aria-label="Send">
                 <SendIcon size={16} />
               </button>
             )}

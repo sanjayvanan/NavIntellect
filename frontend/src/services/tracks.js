@@ -7,6 +7,9 @@ export const TRACK_PERIODS = [
   { hours: 72, label: '3d' },
 ]
 export const DEFAULT_TRACK_HOURS = 24
+// Douglas–Peucker tolerance asked of the server, in degrees (0.0004 ≈ 44 m): points closer than
+// this to the line through their neighbours are dropped, so long tracks load and draw faster.
+export const TRACK_TOLERANCE_DEG = 0.0004
 
 const MAX_POINTS = 5000
 // Two positions further apart than this in time are a gap in reception (positions are stored
@@ -25,7 +28,7 @@ const roughNm = (a, b) => {
 export function fetchTrack(mmsi, hours) {
   const to = new Date()
   const from = new Date(to.getTime() - hours * 3600_000)
-  const q = new URLSearchParams({ from: from.toISOString(), to: to.toISOString() })
+  const q = new URLSearchParams({ from: from.toISOString(), to: to.toISOString(), tolerance: String(TRACK_TOLERANCE_DEG) })
   return apiFetch(`/api/vessels/${mmsi}/track?${q}`)
 }
 
@@ -36,7 +39,9 @@ export function fetchTrack(mmsi, hours) {
  * - `segments` is the solid line: split where it crosses the antimeridian (a jump of more than
  *   180° in longitude, so it is not drawn right across the map) and at gaps.
  * - `gaps` are stretches with no reports for over GAP_MINUTES: the ship's real route there is
- *   unknown (it may follow a river bend), so they are drawn as a dashed straight line.
+ *   unknown (it may follow a river bend), so they are drawn as a dashed straight line. A simplified
+ *   track says where they are (properties.breaks): after simplifying, a straight stretch with its
+ *   middle points dropped also has long time steps, which are not gaps.
  */
 export function trackToLatLngs(feature) {
   const g = feature?.geometry
@@ -44,7 +49,8 @@ export function trackToLatLngs(feature) {
   const times = feature?.properties?.times
   let points = coords.map(([lng, lat], i) => ({ lat, lng, time: times?.[i] ?? null }))
 
-  if (points.length > MAX_POINTS) {
+  const breaks = Array.isArray(feature?.properties?.breaks) ? new Set(feature.properties.breaks) : null
+  if (!breaks && points.length > MAX_POINTS) {
     const step = (points.length - 1) / (MAX_POINTS - 1)
     points = Array.from({ length: MAX_POINTS }, (_, i) => points[Math.round(i * step)])
   }
@@ -60,7 +66,7 @@ export function trackToLatLngs(feature) {
       current = []
     } else if (prev && p.time != null && prev.time != null) {
       const minutes = (p.time - prev.time) / 60_000
-      if (minutes > GAP_MINUTES && roughNm(prev, p) > GAP_MIN_NM) {
+      if (breaks ? breaks.has(i) : minutes > GAP_MINUTES && roughNm(prev, p) > GAP_MIN_NM) {
         gaps.push({ from: [prev.lat, prev.lng], to: [p.lat, p.lng], minutes: Math.round(minutes) })
         segments.push(current)
         current = []
