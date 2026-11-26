@@ -1,0 +1,276 @@
+/* Notifications: sidebar panel, bell badge, pop-up toasts, and the ship popup's track row. */
+
+.notifications-panel {
+  width: 340px;
+  max-width: calc(100vw - 88px);
+  padding-bottom: 8px;
+}
+
+.notif-empty {
+  padding: 18px 4px 12px;
+  color: var(--panel-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.notif-empty p {
+  margin: 0 0 6px;
+  color: var(--panel-text);
+}
+
+.notif-retry {
+  margin-top: 4px;
+  padding: 6px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--panel-text);
+  cursor: pointer;
+}
+
+.notif-list {
+  list-style: none;
+  margin: 0 -8px;
+  padding: 0;
+}
+
+/* Severity colour, used by the rows and the toasts */
+.sev-info { --sev: #1e88e5; }
+.sev-warning { --sev: #f59e0b; }
+.sev-critical { --sev: #e53935; }
+
+.notif-item {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 26px 9px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--panel-text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.notif-item:hover,
+.notif-item:focus-visible {
+  background: var(--panel-hover);
+  outline: none;
+}
+
+.alert-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--sev) 16%, transparent);
+  color: var(--sev);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.notif-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.alert-text {
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.alert-text strong {
+  font-weight: 600;
+}
+
+.notif-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  color: var(--panel-muted);
+  font-size: 11.5px;
+}
+
+.notif-item.unread .alert-text {
+  font-weight: 500;
+}
+
+.notif-dot {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: var(--sev);
+}
+
+/* Unread count on the bell */
+.sidebar-badge {
+  position: absolute;
+  top: 4px;
+  right: 3px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: #e53935;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+  box-shadow: 0 0 0 2px var(--rail-bg);
+}
+
+/* Pop-ups for alerts that arrive while the app is open */
+.alert-toasts {
+  position: fixed;
+  right: 16px;
+  bottom: 56px; /* above the status bar */
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+}
+
+.alert-toast {
+  --toast-bg: #ffffff;
+  --toast-text: #1f2329;
+  --panel-muted: #5b6470;
+  display: flex;
+  align-items: stretch;
+  border-radius: 10px;
+  border-left: 4px solid var(--sev);
+  background: var(--toast-bg);
+  color: var(--toast-text);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+  animation: alert-toast-in 0.18s ease-out;
+  font-size: 13px;
+}
+
+.alert-toast.dark {
+  --toast-bg: #23272e;
+  --toast-text: #eef1f5;
+  --panel-muted: #a3acb8;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.alert-toast-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 6px 10px 10px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.alert-toast-close {
+  flex: none;
+  width: 30px;
+  border: none;
+  background: transparent;
+  color: var(--panel-muted);
+  cursor: pointer;
+}
+
+.alert-toast-close:hover {
+  color: var(--toast-text);
+}
+
+@keyframes alert-toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alert-toast { animation: none; }
+}
+
+/* Ship popup: Track history row */
+.track-row {
+  align-items: flex-start;
+}
+
+.track-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.track-periods {
+  display: flex;
+  gap: 4px;
+}
+
+.track-button,
+.track-period {
+  padding: 4px 9px;
+  border: 1px solid rgba(249, 115, 22, 0.5);
+  border-radius: 6px;
+  background: rgba(249, 115, 22, 0.1);
+  color: #c2410c;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.track-button:hover,
+.track-period:hover {
+  background: rgba(249, 115, 22, 0.18);
+}
+
+.track-period.active {
+  background: #f97316;
+  border-color: #f97316;
+  color: #fff;
+}
+
+.track-button.subtle {
+  border-color: rgba(0, 0, 0, 0.15);
+  background: transparent;
+  color: #666;
+}
+
+.dark .track-button,
+.dark .track-period {
+  color: #fdba74;
+}
+
+.dark .track-period.active {
+  color: #fff;
+}
+
+.dark .track-button.subtle {
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #bbb;
+}
+
+.track-note {
+  color: #888;
+  font-size: 11.5px;
+}
+
+.track-note.error {
+  color: #e53935;
+}

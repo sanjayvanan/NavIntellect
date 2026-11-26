@@ -6,6 +6,7 @@ import mapObjectsUiReducer from './uiSlice'
 export { default as MapObjectsPanel } from './MapObjectsPanel'
 export { default as MapObjectsLayers } from './MapObjectsLayers'
 export { selectObject, issueCommand } from './uiSlice'
+export { OBJECT_TYPES, objectTypeOf } from './objectTypes'
 
 /** Reducers to mount in the store, keyed by their state slice name. */
 export const mapObjectsReducers = { zones: zonesReducer, pins: pinsReducer, mapObjectsUi: mapObjectsUiReducer }

@@ -23,8 +23,15 @@ import { baseLayers, overlayLayers } from '../config/mapLayers'
 import SettingsPanel from './SettingsPanel'
 import AccountPanel from './AccountPanel'
 import { MapObjectsPanel } from '../features/mapObjects'
+import NotificationsPanel from './NotificationsPanel'
+import TrackInfoPanel from './TrackInfoPanel'
+import { selectUnreadCount } from '../store/alertsSlice'
 import BrandMark from './BrandMark'
 import './Sidebar.css'
+
+// Rail buttons that open a panel, and those whose panel is tall (placed at the top, full height).
+const PANELS = new Set(['mapType', 'objects', 'settings', 'notifications', 'trackInfo'])
+const TALL_PANELS = new Set(['objects', 'notifications', 'trackInfo'])
 
 const sidebarButtons = [
   { id: 'mapType', Icon: LayersIcon, label: 'Map layers' },
@@ -47,10 +54,9 @@ function Sidebar({ rail, fullscreen }) {
   const activeLayer = useSelector((state) => state.theme.baseLayer)
   const activeOverlays = useSelector((state) => state.theme.overlays)
   const user = useSelector((state) => state.auth.user)
-  const [showLayerControl, setShowLayerControl] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
-  const [showAccount, setShowAccount] = useState(false)
-  const [showObjects, setShowObjects] = useState(false)
+  // The open panel (one at a time): a rail button id ('mapType', 'objects', ...), 'account' or null.
+  const [panel, setPanel] = useState(null)
+  const unread = useSelector(selectUnreadCount)
   const selection = useSelector((state) => state.mapObjectsUi.selection)
   const objectCommand = useSelector((state) => state.mapObjectsUi.command)
   const [buttonPosition, setButtonPosition] = useState({ top: 0 })
@@ -85,51 +91,32 @@ function Sidebar({ rail, fullscreen }) {
   useEffect(() => {
     if (!selection && !objectCommand) return
     if (collapsedRef.current) dispatch(toggleSidebar())
-    setShowObjects((open) => {
-      if (!open) setButtonPosition({ top: 12 })
-      return true
+    setPanel((open) => {
+      if (open !== 'objects') setButtonPosition({ top: 12 })
+      return 'objects'
     })
-    setShowLayerControl(false)
-    setShowSettings(false)
-    setShowAccount(false)
   }, [selection, objectCommand, dispatch])
 
   const handleSidebarClick = (buttonId, event) => {
     const rect = event.currentTarget.getBoundingClientRect()
     // Align the panel with its button, but keep at least ~320px of it on screen.
     const top = Math.max(12, Math.min(rect.top - 6, window.innerHeight - 332))
-    setShowAccount(false)
-    if (buttonId === 'mapType') {
-      setButtonPosition({ top })
-      setShowLayerControl(!showLayerControl)
-      setShowSettings(false)
-      setShowObjects(false)
-    } else if (buttonId === 'settings') {
-      setButtonPosition({ top })
-      setShowSettings(!showSettings)
-      setShowLayerControl(false)
-      setShowObjects(false)
-    } else if (buttonId === 'objects') {
-      setButtonPosition({ top: 12 }) // tall panel: use the full height
-      setShowObjects(!showObjects)
-      setShowLayerControl(false)
-      setShowSettings(false)
-    }
+    if (!PANELS.has(buttonId)) return // no panel yet (Routes)
+    // Tall panels (lists) use the full height; small ones line up with their button.
+    setButtonPosition({ top: TALL_PANELS.has(buttonId) ? 12 : top })
+    setPanel((open) => (open === buttonId ? null : buttonId))
   }
 
   const handleLayerChange = (layer) => dispatch(setBaseLayer(layer.name))
   const handleOverlayToggle = (overlay) => dispatch(toggleOverlay(overlay.name))
 
   if (!rail) return null
-  const closePanels = () => {
-    setShowLayerControl(false)
-    setShowSettings(false)
-    setShowAccount(false)
-    setShowObjects(false)
-  }
+  const closePanels = () => setPanel(null)
   const panelStyle = { top: buttonPosition.top, maxHeight: `calc(100vh - ${buttonPosition.top + 12}px)` }
-  const isActive = (id) =>
-    (id === 'mapType' && showLayerControl) || (id === 'settings' && showSettings) || (id === 'objects' && showObjects)
+  // The ship list scrolls inside the panel, so it needs a definite height.
+  const tallStyle = { ...panelStyle, height: panelStyle.maxHeight }
+  const isActive = (id) => panel === id
+  const showAccount = panel === 'account'
 
   return createPortal(
     <>
@@ -150,18 +137,27 @@ function Sidebar({ rail, fullscreen }) {
         <div className="sidebar-divider" />
 
         <div className="sidebar-group">
-          {sidebarButtons.map(({ id, Icon, label }) => (
-            <button
-              key={id}
-              className={`sidebar-button ${isActive(id) ? 'active' : ''}`}
-              onClick={(e) => handleSidebarClick(id, e)}
-              data-label={label}
-              aria-label={label}
-              aria-pressed={isActive(id)}
-            >
-              <Icon />
-            </button>
-          ))}
+          {sidebarButtons.map(({ id, Icon, label }) => {
+            const badge = id === 'notifications' && unread > 0 ? (unread > 99 ? '99+' : String(unread)) : null
+            const fullLabel = badge ? `${label} (${unread} new)` : label
+            return (
+              <button
+                key={id}
+                className={`sidebar-button ${isActive(id) ? 'active' : ''}`}
+                onClick={(e) => handleSidebarClick(id, e)}
+                data-label={fullLabel}
+                aria-label={fullLabel}
+                aria-pressed={isActive(id)}
+              >
+                <Icon />
+                {badge && (
+                  <span className="sidebar-badge" aria-hidden="true">
+                    {badge}
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
 
         <div className="sidebar-spacer" />
@@ -190,12 +186,7 @@ function Sidebar({ rail, fullscreen }) {
           <div className="sidebar-divider" />
           <button
             className={`sidebar-avatar ${showAccount ? 'active' : ''}`}
-            onClick={() => {
-              setShowLayerControl(false)
-              setShowSettings(false)
-              setShowObjects(false)
-              setShowAccount(!showAccount)
-            }}
+            onClick={() => setPanel((open) => (open === 'account' ? null : 'account'))}
             data-label={displayName(user)}
             aria-label="Account"
             aria-expanded={showAccount}
@@ -207,11 +198,15 @@ function Sidebar({ rail, fullscreen }) {
 
       {showAccount && <AccountPanel user={user} theme={theme} onClose={closePanels} />}
 
-      {showSettings && <SettingsPanel style={panelStyle} onClose={closePanels} />}
+      {panel === 'settings' && <SettingsPanel style={panelStyle} onClose={closePanels} />}
 
-      {showObjects && <MapObjectsPanel style={panelStyle} theme={theme} onClose={closePanels} />}
+      {panel === 'objects' && <MapObjectsPanel style={panelStyle} theme={theme} onClose={closePanels} />}
 
-      {showLayerControl && (
+      {panel === 'notifications' && <NotificationsPanel style={panelStyle} theme={theme} onClose={closePanels} />}
+
+      {panel === 'trackInfo' && <TrackInfoPanel style={tallStyle} theme={theme} onClose={closePanels} />}
+
+      {panel === 'mapType' && (
         <div className={`layer-control-panel ${theme}`} style={panelStyle}>
           <div className="panel-header">
             <span>Map layers</span>

@@ -12,6 +12,40 @@ const listQuery = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(50),
 });
 
+/** Ship list (Track info panel): every ship heard recently, optionally only those inside a zone. */
+const browseQuery = z.object({
+  q: z.string().trim().min(1).max(64).optional(),
+  /** Only ships whose latest position is inside this zone (one the viewer can see). */
+  zone_id: z.uuid().optional(),
+  /** Heard within this many hours; the map shows the last 50 h, so the default matches it. */
+  hours: z.coerce.number().positive().max(720).default(50),
+  sort: z.enum(['recent', 'name', 'speed']).default('recent'),
+  offset: z.coerce.number().int().min(0).max(100_000).default(0),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+
+/**
+ * The search used by both the search box and the ship list: matches name (anywhere), callsign,
+ * MMSI and IMO (prefix). Adds its parameters to `params`; returns the WHERE clause and the
+ * relevance ORDER BY (exact MMSI/IMO/callsign, then name prefix, then MMSI prefix, then fuzzy name).
+ */
+function searchSql(text: string, params: unknown[]) {
+  const like = text.replace(/[\\%_]/g, (c) => '\\' + c); // escape LIKE wildcards
+  params.push(text, like);
+  const [t, k] = [`$${params.length - 1}`, `$${params.length}`];
+  return {
+    where: `(v.name ILIKE '%' || ${k} || '%'
+             OR v.callsign ILIKE ${k} || '%'
+             OR v.mmsi::text LIKE ${k} || '%'
+             OR (v.imo IS NOT NULL AND v.imo::text LIKE ${k} || '%'))`,
+    order: `CASE WHEN v.mmsi::text = ${t} OR v.imo::text = ${t} OR upper(v.callsign) = upper(${t}) THEN 0
+                 WHEN v.name ILIKE ${k} || '%' THEN 1
+                 WHEN v.mmsi::text LIKE ${k} || '%' THEN 2
+                 ELSE 3 END,
+            word_similarity(${t}, v.name) DESC NULLS LAST`,
+  };
+}
+
 const trackQuery = z.object({
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
@@ -43,18 +77,9 @@ export async function vesselRoutes(app: FastifyInstance) {
     const where: string[] = [];
     let order = 'l.ts DESC NULLS LAST';
     if (q.q) {
-      const like = q.q.replace(/[\\%_]/g, (c) => '\\' + c); // escape LIKE wildcards
-      params.push(q.q, like);
-      const [t, k] = [`$${params.length - 1}`, `$${params.length}`];
-      where.push(`(v.name ILIKE '%' || ${k} || '%'
-                 OR v.callsign ILIKE ${k} || '%'
-                 OR v.mmsi::text LIKE ${k} || '%'
-                 OR (v.imo IS NOT NULL AND v.imo::text LIKE ${k} || '%'))`);
-      order = `CASE WHEN v.mmsi::text = ${t} OR v.imo::text = ${t} OR upper(v.callsign) = upper(${t}) THEN 0
-                    WHEN v.name ILIKE ${k} || '%' THEN 1
-                    WHEN v.mmsi::text LIKE ${k} || '%' THEN 2
-                    ELSE 3 END,
-               word_similarity(${t}, v.name) DESC NULLS LAST, ${order}`;
+      const search = searchSql(q.q, params);
+      where.push(search.where);
+      order = `${search.order}, ${order}`;
     }
     if (q.bbox) {
       params.push(...q.bbox);
@@ -71,6 +96,56 @@ export async function vesselRoutes(app: FastifyInstance) {
       params,
     );
     return rows;
+  });
+
+  // Ship list for the Track info panel: { total, vessels } where total counts every match and
+  // vessels is one page (offset/limit) in the legacy map shape (+ imo, callsign, destination).
+  app.get('/api/vessels/browse', { preHandler: readAccess }, async (req) => {
+    const q = parse(browseQuery, req.query);
+    const params: unknown[] = [q.hours];
+    const where = ['l.ts >= now() - make_interval(secs => $1::float8 * 3600)'];
+    let zoneJoin = '';
+    let zone: { id: string; name: string } | null = null;
+    if (q.zone_id) {
+      const { rows } = await pool.query(`SELECT z.id, z.name FROM zones z WHERE z.id = $1 AND ${visibleSql('z', 2)}`, [
+        q.zone_id,
+        req.user?.id ?? null,
+      ]);
+      if (!rows[0]) throw notFound('Zone');
+      zone = rows[0];
+      params.push(q.zone_id);
+      zoneJoin = `JOIN zones z ON z.id = $${params.length} AND ST_Covers(z.geom, l.geom)`;
+    }
+    const orders = {
+      recent: 'l.ts DESC',
+      name: 'v.name ASC NULLS LAST, v.mmsi',
+      speed: 'l.sog DESC NULLS LAST, l.ts DESC',
+    };
+    let order: string = orders[q.sort];
+    if (q.q) {
+      const search = searchSql(q.q, params);
+      where.push(search.where);
+      // "Recently heard" puts the best matches first; other orders use relevance to break ties.
+      order = q.sort === 'recent' ? `${search.order}, ${order}` : `${order}, ${search.order}`;
+    }
+    params.push(q.limit, q.offset);
+    const { rows } = await pool.query(
+      `WITH m AS MATERIALIZED (
+         SELECT l.mmsi FROM vessel_latest l JOIN vessels v USING (mmsi) ${zoneJoin}
+         WHERE ${where.join(' AND ')}
+       ),
+       page AS (
+         SELECT ${LEGACY_SHIP_COLUMNS}, v.imo, v.callsign, v.destination,
+                row_number() OVER (ORDER BY ${order}, v.mmsi) AS _rn
+         FROM m JOIN vessel_latest l USING (mmsi) JOIN vessels v USING (mmsi)
+         ORDER BY _rn
+         LIMIT $${params.length - 1} OFFSET $${params.length}
+       )
+       SELECT (SELECT count(*) FROM m)::int AS total,
+              COALESCE((SELECT jsonb_agg(to_jsonb(page) - '_rn' ORDER BY _rn) FROM page), '[]'::jsonb) AS vessels`,
+      params,
+    );
+    return { total: rows[0].total, offset: q.offset, limit: q.limit, zone, vessels: rows[0].vessels };
   });
 
   // Full vessel profile: static data, latest position (legacy shape) and zones it is currently in.

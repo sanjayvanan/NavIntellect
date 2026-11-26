@@ -1,6 +1,8 @@
 import { MapContainer, LayerGroup } from 'react-leaflet'
 import { useSelector } from 'react-redux'
 import ShipLayer from './ShipLayer'
+import TrackLayer from './TrackLayer'
+import AlertCenter from './AlertCenter'
 import { MapObjectsLayers } from '../features/mapObjects'
 import MapContextMenu from './MapContextMenu'
 import ZoomControl from './ZoomControl'
@@ -42,9 +44,11 @@ function MapComponent({ children }) {
       {/* Ship Layer */}
       <MapObjectsLayers />
       <MapContextMenu />
+      <TrackLayer />
       <LayerGroup>
         <ShipLayer />
       </LayerGroup>
+      <AlertCenter />
       
       <ZoomControl />
       <BottomBar />

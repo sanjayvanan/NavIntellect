@@ -1,10 +1,14 @@
+/* eslint-disable react/prop-types -- internal components; the project does not use PropTypes */
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { useSelector, useDispatch } from 'react-redux'
-import { fetchShips, setSelectedShip, upsertShips, FULL_DETAIL_ZOOM } from '../store/shipSlice'
+import { fetchShips, setSelectedShip, upsertShips, showTrack, hideTrack, FULL_DETAIL_ZOOM } from '../store/shipSlice'
+import { alertReceived } from '../store/alertsSlice'
 import { connectLiveSocket } from '../services/liveSocket'
+import { getSession, refreshSession } from '../services/api'
+import { TRACK_PERIODS, DEFAULT_TRACK_HOURS } from '../services/tracks'
 import { boundsToBbox } from '../utils/mapBbox'
 import { ShipCanvasLayer } from '../map/ShipCanvasLayer'
 import { zoomToPoint } from '../map/navigation'
@@ -23,8 +27,51 @@ const formatLastReport = (timestamp) => {
   return `(${relativeTime})`
 }
 
+/** "Track history" row of the ship popup: Show track, then a period choice and Hide. */
+const TrackHistoryRow = ({ ship, track, onShow, onHide }) => {
+  const shown = track.mmsi === ship.mmsi
+  let note = null
+  if (shown && track.status === 'loading') note = 'Loading track…'
+  else if (shown && track.status === 'failed') note = track.error || 'Could not load the track'
+  else if (shown && track.status === 'ready')
+    note = track.points ? `${track.points.toLocaleString()} positions` : 'No positions in this period'
+  return (
+    <div className="detail-row track-row">
+      <div className="detail-label">
+        <i className="detail-icon">🛤️</i>
+        <span>Track</span>
+      </div>
+      {!shown ? (
+        <button type="button" className="track-button" onClick={() => onShow(track.hours || DEFAULT_TRACK_HOURS)}>
+          Show track
+        </button>
+      ) : (
+        <div className="track-controls">
+          <div className="track-periods" role="group" aria-label="Track period">
+            {TRACK_PERIODS.map((p) => (
+              <button
+                key={p.hours}
+                type="button"
+                className={`track-period ${track.hours === p.hours ? 'active' : ''}`}
+                aria-pressed={track.hours === p.hours}
+                onClick={() => onShow(p.hours)}
+              >
+                {p.label}
+              </button>
+            ))}
+            <button type="button" className="track-button subtle" onClick={onHide}>
+              Hide
+            </button>
+          </div>
+          {note && <small className={`track-note ${track.status === 'failed' ? 'error' : ''}`}>{note}</small>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Popup body for a ship (plain render function, rendered into the Leaflet popup via a portal). */
-const renderShipPopup = (ship, theme) => {
+const renderShipPopup = (ship, theme, trackRow) => {
   return (
     <div className={`ship-popup ${theme}`}>
       <div className="ship-header">
@@ -88,6 +135,8 @@ const renderShipPopup = (ship, theme) => {
           </div>
           <div className="detail-value timestamp">{formatLastReport(ship.sensor_timestamp)}</div>
         </div>
+
+        {trackRow}
       </div>
     </div>
   )
@@ -107,6 +156,8 @@ function ShipLayer() {
   const { data: ships, status, error } = useSelector((state) => state.ships)
   const selectedShip = useSelector((state) => state.ships.selectedShip)
   const theme = useSelector((state) => state.theme.mode)
+  const track = useSelector((state) => state.ships.track)
+  const userId = useSelector((state) => state.auth.user?.id ?? null)
   const { shipDensity: densityLevel, clustering, shipSize, showLabels, liveUpdates } = useSelector((state) => state.theme)
   const density = DENSITY_LEVELS[densityLevel]?.density ?? null // null = all ships
   const map = useMap()
@@ -123,12 +174,35 @@ function ShipLayer() {
   const selectRef = useRef(selectShip)
   selectRef.current = selectShip
 
+  // Opening a ship by MMSI (notifications): select it if it is loaded, otherwise go to where it
+  // was reported and select it once the ships of that area have loaded.
+  const pendingFocusRef = useRef(null)
+  const focusShip = (mmsi, lat, lon) => {
+    const ship = ships.find((s) => s.mmsi === mmsi)
+    if (ship) return selectShip(ship)
+    if (lat == null || lon == null) return
+    pendingFocusRef.current = mmsi
+    zoomToPoint(map, [lat, lon], Math.max(map.getZoom(), 12))
+  }
+  const focusRef = useRef(focusShip)
+  focusRef.current = focusShip
+
   useEffect(() => {
     window.handleShipSelect = (ship) => selectRef.current(ship)
+    window.handleShipFocus = (mmsi, lat, lon) => focusRef.current(mmsi, lat, lon)
     return () => {
       delete window.handleShipSelect
+      delete window.handleShipFocus
     }
   }, [])
+
+  useEffect(() => {
+    if (pendingFocusRef.current == null) return
+    const ship = ships.find((s) => s.mmsi === pendingFocusRef.current)
+    if (!ship) return
+    pendingFocusRef.current = null
+    dispatch(setSelectedShip(ship))
+  }, [ships, dispatch])
 
   // One canvas layer for all ships.
   useEffect(() => {
@@ -183,6 +257,10 @@ function ShipLayer() {
     const socket = liveUpdates
       ? connectLiveSocket({
           bbox: view().bbox,
+          // Signed in, the server also sends alerts of the user's own zones.
+          getToken: () => getSession()?.access_token ?? null,
+          refreshToken: async (stale) => (await refreshSession(stale))?.access_token ?? null,
+          onAlert: (alert) => dispatch(alertReceived(alert)),
           // Zoomed out, only refresh the representative ships already shown.
           onVessels: (updates) => dispatch(upsertShips({ ships: updates, addNew: fullDetail() })),
         })
@@ -206,12 +284,21 @@ function ShipLayer() {
       map.off('moveend', onMoveEnd)
       socket.close()
     }
-  }, [dispatch, map, density, liveUpdates])
+    // userId: reconnect as the new user after signing in or out.
+  }, [dispatch, map, density, liveUpdates, userId])
 
   // Popup for the selected ship, managed directly with Leaflet: opened once per selection and
   // moved with setLatLng on live updates (re-opening it every second would flicker). Its content
   // is rendered by React through a portal.
-  const [popupEl] = useState(() => document.createElement('div'))
+  const [popupEl] = useState(() => {
+    const el = document.createElement('div')
+    // Leaflet ignores clicks inside a popup by walking up from the clicked element, but a popup
+    // button that React replaces on click (Show track -> period buttons) is already detached by
+    // then, so the click would reach the map: close the popup and select the ship underneath.
+    // Mark such targets before the click bubbles (Leaflet skips targets with this flag).
+    el.addEventListener('click', (e) => (e.target._leaflet_disable_events = true), true)
+    return el
+  })
   const popupRef = useRef(null)
   const selectedMmsi = liveSelected?.latitude != null ? liveSelected.mmsi : null
 
@@ -263,7 +350,20 @@ function ShipLayer() {
           </div>
         </div>
       )}
-      {selectedMmsi != null && createPortal(renderShipPopup(liveSelected, theme), popupEl)}
+      {selectedMmsi != null &&
+        createPortal(
+          renderShipPopup(
+            liveSelected,
+            theme,
+            <TrackHistoryRow
+              ship={liveSelected}
+              track={track}
+              onShow={(hours) => dispatch(showTrack({ mmsi: liveSelected.mmsi, hours }))}
+              onHide={() => dispatch(hideTrack())}
+            />,
+          ),
+          popupEl,
+        )}
     </>
   )
 }

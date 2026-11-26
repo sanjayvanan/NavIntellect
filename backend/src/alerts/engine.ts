@@ -12,7 +12,7 @@ export interface AlertRow {
   mmsi: number;
   zone_id: string | null;
   zone_name: string | null;
-  /** Owner of a personal zone (null = shared). Personal-zone alerts are not broadcast over WebSocket. */
+  /** Owner of a personal zone (null = shared). Personal-zone alerts are pushed over WebSocket only to the owner. */
   zone_owner_id: string | null;
   vessel_name: string | null;
   latitude: number | null;

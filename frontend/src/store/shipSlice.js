@@ -54,8 +54,11 @@ const initialState = {
     speedRange: { min: 0, max: 100 },
     searchQuery: ''
   },
-  shipHistory: {} // Store historical positions
+  // Track history drawn for one ship (TrackLayer). mmsi null = no track shown.
+  track: { mmsi: null, hours: 24, status: 'idle', points: 0, error: null },
 }
+
+const noTrack = initialState.track
 
 export const shipSlice = createSlice({
   name: 'ships',
@@ -63,19 +66,26 @@ export const shipSlice = createSlice({
   reducers: {
     setSelectedShip: (state, action) => {
       state.selectedShip = action.payload
-      // Store ship position in history
-      if (action.payload) {
-        if (!state.shipHistory[action.payload.mmsi]) {
-          state.shipHistory[action.payload.mmsi] = []
-        }
-        state.shipHistory[action.payload.mmsi].push({
-          position: [action.payload.latitude, action.payload.longitude],
-          timestamp: Date.now()
-        })
-      }
+      // A track belongs to the selected ship: selecting another ship (or none) hides it.
+      if (state.track.mmsi != null && state.track.mmsi !== action.payload?.mmsi) state.track = noTrack
     },
     clearSelectedShip: (state) => {
       state.selectedShip = null
+      state.track = noTrack
+    },
+    /** Payload { mmsi, hours }: show that ship's track for the last `hours`. */
+    showTrack: (state, action) => {
+      const { mmsi, hours } = action.payload
+      state.track = { ...noTrack, mmsi, hours: hours ?? state.track.hours, status: 'loading' }
+    },
+    hideTrack: (state) => {
+      state.track = { ...noTrack, hours: state.track.hours }
+    },
+    /** Set by TrackLayer. Payload { mmsi, status: 'loading' | 'ready' | 'failed', points?, error? }. */
+    trackStatus: (state, action) => {
+      const { mmsi, status, points = 0, error = null } = action.payload
+      if (state.track.mmsi !== mmsi) return // a late answer for a track already hidden
+      Object.assign(state.track, { status, points, error })
     },
     filterShipsByType: (state, action) => {
       state.filters.type = action.payload
@@ -138,8 +148,11 @@ export const shipSlice = createSlice({
 })
 
 export const { 
-  setSelectedShip, 
-  clearSelectedShip, 
+  setSelectedShip,
+  clearSelectedShip,
+  showTrack,
+  hideTrack,
+  trackStatus,
   filterShipsByType,
   filterShipsBySpeed,
   searchShips,

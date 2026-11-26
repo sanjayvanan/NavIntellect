@@ -1,0 +1,243 @@
+/* Track info panel (sidebar): ship count, search, area filter and the ship list. */
+
+.track-info-panel {
+  display: flex;
+  flex-direction: column;
+  width: 360px;
+  max-width: calc(100vw - 88px);
+  overflow: hidden; /* the list scrolls, not the panel */
+}
+
+.ti-total {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+  color: var(--panel-muted);
+  font-size: 13px;
+}
+
+.ti-total strong {
+  color: var(--panel-text);
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ti-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  color: var(--panel-muted);
+}
+
+.ti-search:focus-within {
+  border-color: #1e88e5;
+  box-shadow: 0 0 0 3px rgba(30, 136, 229, 0.15);
+}
+
+.ti-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--panel-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.ti-filters {
+  display: grid;
+  grid-template-columns: 1fr 120px;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ti-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ti-field > span {
+  color: var(--panel-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ti-field select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 7px;
+  background: var(--panel-bg);
+  color: var(--panel-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.ti-zone {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: rgba(30, 136, 229, 0.1);
+  font-size: 12px;
+}
+
+.ti-zone span {
+  flex: 1;
+}
+
+.ti-zone button,
+.ti-empty button,
+.ti-footer button {
+  padding: 4px 9px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: var(--panel-bg);
+  color: var(--panel-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ti-zone button:hover,
+.ti-empty button:hover,
+.ti-footer button:hover:not(:disabled) {
+  background: var(--panel-hover);
+}
+
+.ti-footer button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ti-hint {
+  margin: 8px 0 0;
+  color: var(--panel-muted);
+  font-size: 12px;
+}
+
+.ti-list {
+  flex: 1;
+  min-height: 120px;
+  margin: 10px -16px 0;
+  padding: 0 8px;
+  overflow-y: auto;
+  border-top: 1px solid var(--panel-border);
+  transition: opacity 0.15s ease;
+}
+
+.ti-list.busy {
+  opacity: 0.55;
+}
+
+.ti-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+}
+
+.ti-empty {
+  padding: 18px 8px;
+  color: var(--panel-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.ti-empty p {
+  margin: 0 0 8px;
+}
+
+.ti-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--panel-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ti-row:hover,
+.ti-row:focus-visible {
+  background: var(--panel-hover);
+  outline: none;
+}
+
+.ti-row.selected {
+  background: var(--active-color);
+}
+
+.ti-main,
+.ti-side {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ti-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.ti-name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ti-sub {
+  overflow: hidden;
+  color: var(--panel-muted);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ti-side {
+  flex: none;
+  align-items: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+
+.ti-speed {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.ti-seen {
+  color: var(--panel-muted);
+  font-size: 11px;
+}
+
+.ti-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 -16px -14px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--panel-border);
+  color: var(--panel-muted);
+  font-size: 12px;
+}

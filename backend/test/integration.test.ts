@@ -390,6 +390,50 @@ describe('geofences and alerts', () => {
     const alerts = (await app.inject({ url: '/api/alerts?mmsi=419200002&type=ais_gap' })).json();
     expect(alerts).toHaveLength(1);
   });
+
+  it('lists ships with a total, searches them and filters to those inside a zone', async () => {
+    const box = { type: 'Polygon', coordinates: [[[55.0, -21.0], [55.3, -21.0], [55.3, -20.7], [55.0, -20.7], [55.0, -21.0]]] };
+    const created = await app.inject({
+      method: 'POST', url: '/api/zones', headers: { authorization: `Bearer ${adminToken}` },
+      payload: { name: 'Reunion Box', geometry: box, scope: 'shared' },
+    });
+    const zoneId = created.json().id as string;
+    await ingest(
+      shipStaticData({ mmsi: 419500001, name: 'BROWSE ALPHA' }),
+      shipStaticData({ mmsi: 419500002, name: 'BROWSE BRAVO' }),
+      shipStaticData({ mmsi: 419500003, name: 'BROWSE CHARLIE' }),
+      positionReport({ mmsi: 419500001, lat: -20.9, lon: 55.1, sog: 4 }), // inside
+      positionReport({ mmsi: 419500002, lat: -20.8, lon: 55.2, sog: 9 }), // inside
+      positionReport({ mmsi: 419500003, lat: -19.0, lon: 57.5, sog: 1 }), // outside
+    );
+    type Page = { total: number; zone: { name: string } | null; vessels: { mmsi: number; track_name: string }[] };
+    const browse = async (qs: string) => (await app.inject({ url: `/api/vessels/browse?${qs}` })).json() as Page;
+
+    const all = await browse('limit=200');
+    expect(all.total).toBeGreaterThanOrEqual(3);
+    expect(all.vessels.length).toBe(Math.min(all.total, 200));
+
+    const inZone = await browse(`zone_id=${zoneId}&sort=speed`);
+    expect(inZone).toMatchObject({ total: 2, zone: { name: 'Reunion Box' } });
+    expect(inZone.vessels.map((v) => v.mmsi)).toEqual([419500002, 419500001]); // fastest first
+
+    const searched = await browse('q=browse&sort=name&limit=2');
+    expect(searched.total).toBe(3);
+    expect(searched.vessels.map((v) => v.track_name)).toEqual(['BROWSE ALPHA', 'BROWSE BRAVO']);
+    expect((await browse('q=browse&sort=name&limit=2&offset=2')).vessels.map((v) => v.track_name)).toEqual(['BROWSE CHARLIE']);
+    expect((await browse(`q=charlie&zone_id=${zoneId}`)).total).toBe(0);
+
+    // Someone else's personal zone cannot be used as a filter.
+    const owner = (await app.inject({
+      method: 'POST', url: '/api/auth/register', remoteAddress: '10.9.9.8', payload: { email: 'browse-owner@test.local', password: 'browse-owner-pass' },
+    })).json().access_token as string;
+    const personal = await app.inject({
+      method: 'POST', url: '/api/zones', headers: { authorization: `Bearer ${owner}` }, payload: { name: 'Private Box', geometry: box },
+    });
+    expect((await app.inject({ url: `/api/vessels/browse?zone_id=${personal.json().id}` })).statusCode).toBe(404);
+    const mine = await app.inject({ url: `/api/vessels/browse?zone_id=${personal.json().id}`, headers: { authorization: `Bearer ${owner}` } });
+    expect(mine.json().total).toBe(2);
+  });
 });
 
 describe('personal zones and presets', () => {
@@ -548,6 +592,43 @@ describe('websocket', () => {
     expect(messages[0]!.type).toBe('hello');
     expect(pushed).toContain(419300001);
     expect(pushed).not.toContain(419300002);
+  });
+
+  it('pushes a personal-zone alert only to the zone owner', async () => {
+    const port = (app.server.address() as { port: number }).port; // listening since the previous test
+    const signup = async (email: string) =>
+      // Own client address: the sign-up rate limit (10/min per IP) is shared with earlier tests.
+      (await app.inject({ method: 'POST', url: '/api/auth/register', remoteAddress: '10.9.9.9', payload: { email, password: 'ws-alert-pass-123' } })).json().access_token as string;
+    const carol = await signup('ws-owner@test.local');
+    const dave = await signup('ws-other@test.local');
+    const geometry = { type: 'Polygon', coordinates: [[[62.0, 16.0], [62.3, 16.0], [62.3, 16.3], [62.0, 16.3], [62.0, 16.0]]] };
+    const created = await app.inject({
+      method: 'POST', url: '/api/zones', headers: { authorization: `Bearer ${carol}` },
+      payload: { name: 'Carol Box', geometry, active: true },
+    });
+    expect(created.statusCode).toBe(201);
+
+    const open = async (token?: string) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws${token ? `?token=${token}` : ''}`);
+      const alerts: { mmsi: number; type: string; zone_name: string }[] = [];
+      ws.on('message', (m) => {
+        const msg = JSON.parse(m.toString());
+        if (msg.type === 'alert') alerts.push(msg.data);
+      });
+      await new Promise((r) => ws.once('open', r));
+      return { ws, alerts };
+    };
+    const [owner, other, anon] = await Promise.all([open(carol), open(dave), open()]);
+    await new Promise((r) => setTimeout(r, 100));
+
+    await ingest(positionReport({ mmsi: 419300010, lat: 16.1, lon: 62.1, sog: 5, time: minsAgo(1) }));
+    await new Promise((r) => setTimeout(r, 300));
+    for (const c of [owner, other, anon]) c.ws.close();
+
+    const mine = (c: typeof owner) => c.alerts.filter((a) => a.mmsi === 419300010);
+    expect(mine(owner)).toEqual([expect.objectContaining({ type: 'zone_enter', zone_name: 'Carol Box' })]);
+    expect(mine(other)).toHaveLength(0);
+    expect(mine(anon)).toHaveLength(0);
   });
 });
 

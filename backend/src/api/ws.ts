@@ -13,6 +13,8 @@ type BBox = [number, number, number, number]; // minLon, minLat, maxLon, maxLat
 
 interface Client {
   socket: WebSocket;
+  /** Signed-in user, or null for an anonymous connection. */
+  userId: string | null;
   bbox: BBox | null;
   alerts: boolean;
   alive: boolean;
@@ -27,6 +29,13 @@ const clientMsg = z.object({
     .optional(),
 });
 
+/**
+ * Same visibility rule as GET /api/alerts: alerts of shared zones (or without a zone) reach every
+ * client; alerts of a personal zone reach only that zone's owner.
+ */
+export const canReceive = (alert: Pick<AlertRow, 'zone_owner_id'>, userId: string | null) =>
+  !alert.zone_owner_id || alert.zone_owner_id === userId;
+
 const PUSH_INTERVAL_MS = 1000;
 const MAX_BUFFERED_BYTES = 2 * 1024 * 1024;
 
@@ -39,7 +48,7 @@ const inBox = (s: LegacyShip, b: BBox) =>
  * WebSocket at /ws. Protocol:
  *   client -> {"subscribe": {"bbox": [minLon,minLat,maxLon,maxLat] | null, "alerts": true}}
  *   server -> {"type":"vessels","data":[LegacyShip...]}   (coalesced, at most once per second)
- *   server -> {"type":"alert","data":AlertRow}
+ *   server -> {"type":"alert","data":AlertRow}   (personal-zone alerts only to the zone's owner)
  * Updates arrive from the ingestor via Redis pub/sub, so any number of API instances can serve clients.
  */
 export async function wsRoutes(app: FastifyInstance, opts: { subscriber: Redis }) {
@@ -53,10 +62,8 @@ export async function wsRoutes(app: FastifyInstance, opts: { subscriber: Redis }
         for (const s of JSON.parse(payload) as LegacyShip[]) pending.set(s.mmsi, s);
       } else if (channel === CHANNELS.alerts) {
         for (const a of JSON.parse(payload) as AlertRow[]) {
-          // Personal-zone alerts stay private: their owner reads them via the authenticated REST API.
-          if (a.zone_owner_id) continue;
           const msg = JSON.stringify({ type: 'alert', data: a });
-          for (const c of clients) if (c.alerts) send(c, msg);
+          for (const c of clients) if (c.alerts && canReceive(a, c.userId)) send(c, msg);
         }
       }
     } catch (err) {
@@ -101,9 +108,10 @@ export async function wsRoutes(app: FastifyInstance, opts: { subscriber: Redis }
 
   app.get('/ws', { websocket: true }, async (socket, req) => {
     const token = (req.query as { token?: string }).token;
+    let userId: string | null = null;
     if (token) {
       try {
-        await verifyAccessToken(token);
+        userId = (await verifyAccessToken(token)).id;
       } catch {
         socket.close(4401, 'invalid token');
         return;
@@ -113,7 +121,7 @@ export async function wsRoutes(app: FastifyInstance, opts: { subscriber: Redis }
       return;
     }
 
-    const client: Client = { socket, bbox: null, alerts: true, alive: true };
+    const client: Client = { socket, userId, bbox: null, alerts: true, alive: true };
     clients.add(client);
     socket.on('pong', () => (client.alive = true));
     socket.on('close', () => clients.delete(client));

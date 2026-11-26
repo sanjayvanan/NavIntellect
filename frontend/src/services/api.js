@@ -93,11 +93,12 @@ export function refreshSession(staleAccessToken) {
 }
 
 /** fetch() against the API with the bearer token; refreshes once on 401. Returns parsed JSON. */
-export async function apiFetch(path, { method = 'GET', body, keepalive = false } = {}) {
+export async function apiFetch(path, { method = 'GET', body, keepalive = false, signal } = {}) {
   const send = (session) =>
     fetch(`${API_BASE_URL}${path}`, {
       method,
       keepalive,
+      signal, // AbortSignal: lets callers cancel a request that is no longer wanted
       headers: {
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),

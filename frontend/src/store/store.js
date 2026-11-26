@@ -2,6 +2,7 @@ import { configureStore } from '@reduxjs/toolkit'
 import themeReducer from './themeSlice'
 import shipReducer from './shipSlice'
 import authReducer from './authSlice'
+import alertsReducer from './alertsSlice'
 import { mapObjectsReducers } from '../features/mapObjects'
 import { settingsSync } from './settingsSync'
 import { errorMiddleware } from '../middleware/errorMiddleware'
@@ -11,6 +12,7 @@ export const store = configureStore({
     auth: authReducer,
     theme: themeReducer,
     ships: shipReducer,
+    alerts: alertsReducer,
     ...mapObjectsReducers,
   },
   middleware: (getDefaultMiddleware) =>
@@ -20,8 +22,6 @@ export const store = configureStore({
         ignoredActions: ['ships/setSelectedShip'],
         // Ignore these field paths in all actions
         ignoredActionPaths: ['payload.timestamp'],
-        // Ignore these paths in the state
-        ignoredPaths: ['ships.shipHistory']
       }
     }).prepend(settingsSync.middleware).concat(errorMiddleware),
   devTools: process.env.NODE_ENV !== 'production',
@@ -41,7 +41,9 @@ if (import.meta.hot) {
     store.replaceReducer({
       auth: authReducer,
       theme: newThemeModule?.default,
-      ships: newShipModule?.default
+      ships: newShipModule?.default,
+      alerts: alertsReducer,
+      ...mapObjectsReducers,
     })
   })
 } 
