@@ -20,6 +20,7 @@ window bolted onto the side. Every idea below uses something the app already has
 | Map copilot (sidebar ✦ "AI copilot") | **Built** |
 | Ship briefing (✦ "AI briefing" in ship details) and alert explanation (✦ "Why it matters" under each alert) | **Built**: `backend/src/ai/explain.ts`, `frontend/src/components/AiExplain.jsx` |
 | Shadow-cursor guide (ask the copilot "How do I…?") | **Built**: Gemini structured output limited to the controls on screen; `frontend/src/guide/targets.js` (control list, `data-guide` names), `ShadowGuide.jsx` |
+| Evals: 43 scored copilot cases (`npm run eval`) | **Built**: `backend/evals/` |
 | Observability: every AI request traced (`/api/ai/metrics`, `/api/ai/traces`) | **Built**: `backend/src/ai/trace.ts`, table `ai_requests` |
 | Draw zones by talking, voice, anomaly detection ("AI watch"), stuck detection for the guide | Planned |
 
@@ -52,10 +53,42 @@ Without a key the panel says the AI is not set up, and everything else works as 
 - `backend/test/integration.test.ts` ("AI copilot"): tool loop, visibility, cache, forced last round, budget.
 - `backend/test/ai.test.ts`: track summary maths.
 - `frontend/src/store/copilotSlice.test.js`: conversation state and ship links.
+- `backend/test/evals.test.ts`: the eval world, the scorer, and whole cases run with a scripted model.
 
 ---
 
 ## AI engineering: how the copilot is measured
+
+### Evals (`backend/evals/`)
+Unit tests prove the plumbing works; evals measure whether the **model** answers well.
+
+- **The world** (`evals/world.ts`): 19 ships, 5 zones, 7 alerts and synthetic tracks, served on the
+  same API paths and in the same response shapes as the app. The **real** copilot loop and tool executors
+  run against it, so argument checks and result compaction are part of what is measured. The data never
+  changes between runs, and no database is needed.
+- **The cases** (`evals/cases.ts`): 43 questions in 8 categories (search, details, track, zones and
+  alerts, map actions, grounding / saying no, multi-turn, prompt injection). Each case
+  lists what a good answer **must** do, not one exact wording:
+  - the tools it must call and their key arguments, such as a bbox that contains Singapore, a speed
+    filter between 13 and 15 kn, or the right zone id;
+  - the map actions it must produce, and those it must not;
+  - facts the reply must state, numbers included. For example, the distance must be within 10% of
+    what the track tool returned.
+- **Scoring** (`evals/score.ts`): every expectation is one check, and a case passes when all of them
+  pass. There is **no LLM judge**: it would spend the same free quota, and these checks are exact
+  and repeatable.
+- **Running:**
+  - `npm run eval -- --dry-run` validates the cases and shows the budget a run needs.
+  - `npm run eval` runs every case.
+  - `--model` compares models; `--category`, `--cases` and `--limit` run a subset.
+- **Budget:** requests are reserved in the app's own daily budget, so an eval can never push the app
+  over its quota. When the per-minute limit is hit, the runner waits and retries.
+- **Output:** each run is written to `evals/results/<time>-<model>.json`, and one summary line goes
+  to `evals/results/history.jsonl`. The summary has the pass rate per category, requests per case,
+  p50/p95 latency, tokens, cost and the prompt version. The next full run prints the change since
+  the last one, so the effect of a prompt change can be measured.
+
+A full run is about 120 requests, more than the default 100-per-day budget. Run it by category over two days, or raise `AI_DAILY_LIMIT` if your Google project allows more.
 
 ### Observability (`backend/src/ai/trace.ts`, table `ai_requests`)
 A decorator wraps the model client, so neither the Gemini client nor the test fake changed. Every

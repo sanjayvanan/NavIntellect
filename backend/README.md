@@ -146,6 +146,7 @@ Vessel updates are coalesced per MMSI and sent at most once per second, filtered
 | `npm run capture -- 30` | Records 30 s of raw aisstream traffic to `test/fixtures/aisstream-sample.jsonl` and prints how each message type normalized. Run this once with your key to confirm the live wire format. |
 | `npm run replay -- file.jsonl --shift` | Feeds a recording through the full pipeline. Useful for offline demos. |
 | `npm run build` / `start:api` / `start:ingestor` | Production build and start. |
+| `npm run eval -- --dry-run` | Copilot evals (`evals/`): checks the cases and shows the Gemini budget a run would need. Without `--dry-run` it runs them against Gemini (spends free-tier requests; see `docs/AI_FEATURES.md`). |
 
 ## Extending with AI
 The schema is built so an AI assistant can be added without restructuring:
