@@ -13,6 +13,8 @@ export interface MaintenanceOptions {
   /** Ship static data (vessels) not heard for this long is deleted; at least the other retentions. */
   vesselsRetentionDays?: number;
   dbSizeLimitMb: number;
+  /** AI request traces older than this are deleted (default 30 days). */
+  aiTraceRetentionDays?: number;
 }
 
 /** Packs every closed hour (minus the lateness margin) into vessel_tracks. Returns points packed. */
@@ -47,6 +49,11 @@ export async function storageMaintenance(opts: MaintenanceOptions) {
   if (r.raw_created || r.tracks_created || r.raw_dropped || r.tracks_dropped || r.latest_pruned || r.vessels_pruned) logger.info(r, 'storage maintenance');
   await reindexBloated();
   await storageGuard(opts.dbSizeLimitMb);
+  // After the guard: a failure here must never skip the size check.
+  await pool
+    .query(`DELETE FROM ai_requests WHERE created_at < now() - make_interval(days => $1)`, [opts.aiTraceRetentionDays ?? 30])
+    .then((t) => t.rowCount && logger.info({ ai_traces_pruned: t.rowCount }, 'old AI traces deleted'))
+    .catch((err) => logger.warn({ err: (err as Error).message }, 'could not prune AI traces'));
 }
 
 /**

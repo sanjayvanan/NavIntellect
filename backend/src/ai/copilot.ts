@@ -3,6 +3,7 @@ import type { Content, FunctionCall, Part } from '@google/genai';
 import type { Redis } from 'ioredis';
 import { BudgetError, type AiBudget, type Usage } from './budget.js';
 import { runTool, TOOL_DECLARATIONS, type ApiGet, type MapAction, type ShipRef, type ToolContext } from './tools.js';
+import { promptVersion, type AiTracer } from './trace.js';
 
 /**
  * Map copilot: answers questions about the live ship data with Gemini function calling.
@@ -15,18 +16,29 @@ import { runTool, TOOL_DECLARATIONS, type ApiGet, type MapAction, type ShipRef, 
  * same view are answered from a short-lived cache.
  */
 
+export interface GenerateRequest {
+  contents: Content[];
+  systemInstruction: string;
+  allowTools: boolean;
+  /** false: no map tools declared at all (one-shot answers: explanations, guides). */
+  tools?: boolean;
+  /** Answer as JSON matching this JSON Schema (structured output). */
+  json?: Record<string, unknown>;
+  maxTokens?: number;
+}
+
+export interface GenerateResult {
+  functionCalls?: FunctionCall[];
+  text?: string;
+  content?: Content;
+  tokens?: number;
+  /** Token split, when the model reports it (output includes thinking tokens). */
+  usage?: { prompt: number; output: number };
+}
+
 /** The part of the Gemini client this needs (lets tests use a scripted fake). */
 export interface ModelClient {
-  generate(req: {
-    contents: Content[];
-    systemInstruction: string;
-    allowTools: boolean;
-    /** false: no map tools declared at all (one-shot answers: explanations, guides). */
-    tools?: boolean;
-    /** Answer as JSON matching this JSON Schema (structured output). */
-    json?: Record<string, unknown>;
-    maxTokens?: number;
-  }): Promise<{ functionCalls?: FunctionCall[]; text?: string; content?: Content; tokens?: number }>;
+  generate(req: GenerateRequest): Promise<GenerateResult>;
 }
 
 /**
@@ -93,6 +105,9 @@ Users are maritime operators. Answer questions about ships, zones (areas drawn o
 - Reply in plain text (no markdown tables), short: 1-4 sentences or a short list. Name ships with their name and MMSI.
 - If something cannot be answered with the tools, say so briefly. Data covers ships heard in the last 50 hours; tracks about 3 days.`;
 
+/** Changes whenever the system prompt or the tool list changes (recorded with every trace). */
+export const COPILOT_PROMPT_VERSION = promptVersion(SYSTEM, TOOL_DECLARATIONS);
+
 function contextText(ctx: CopilotContext) {
   const lines = [`Now: ${new Date().toISOString().slice(0, 16)}Z.`];
   if (ctx.bbox) lines.push(`Current map view (minLon,minLat,maxLon,maxLat): ${ctx.bbox.map((v) => v.toFixed(2)).join(',')}; zoom ${ctx.zoom ?? '?'}.`);
@@ -108,6 +123,8 @@ export class Copilot {
       redis: Redis;
       cachePrefix: string;
       maxToolRounds: number;
+      /** Records every request (latency, tokens, tools, outcome); optional. */
+      tracer?: AiTracer;
       /** Seconds to wait; injectable so tests do not sleep. */
       sleep?: (s: number) => Promise<void>;
     },
@@ -122,6 +139,23 @@ export class Copilot {
     const { userId, messages, context, get } = opts;
     const question = messages[messages.length - 1];
     if (!question || question.role !== 'user' || !question.text.trim()) throw new CopilotError(400, 'Ask a question.');
+    const run = this.deps.tracer?.run({ feature: 'copilot', userId, promptVersion: COPILOT_PROMPT_VERSION });
+    try {
+      return await this.answer(userId, messages, context, get, run);
+    } finally {
+      await run?.finish();
+    }
+  }
+
+  private async answer(
+    userId: string,
+    messages: ChatMessage[],
+    context: CopilotContext,
+    get: ApiGet,
+    run: ReturnType<AiTracer['run']> | undefined,
+  ): Promise<CopilotResult> {
+    const question = messages[messages.length - 1]!;
+    const model = run ? run.wrap(this.deps.model) : this.deps.model;
 
     // Same user, same question, same view, no earlier conversation: reuse the answer for a while.
     const cacheKey =
@@ -135,6 +169,7 @@ export class Copilot {
     if (cacheKey) {
       const hit = await this.deps.redis.get(cacheKey);
       if (hit) {
+        run?.cacheHit();
         const cached = JSON.parse(hit) as Omit<CopilotResult, 'usage' | 'cached'>;
         return { ...cached, requests: 0, tokens: 0, cached: true, usage: await this.deps.budget.usage(userId) };
       }
@@ -151,7 +186,7 @@ export class Copilot {
       const allowTools = round < this.deps.maxToolRounds;
       await this.reserve(userId);
       requests++;
-      const res = await this.deps.model.generate({ contents, systemInstruction, allowTools });
+      const res = await model.generate({ contents, systemInstruction, allowTools });
       tokens += res.tokens ?? 0;
       const calls = allowTools ? (res.functionCalls ?? []) : [];
       if (!calls.length) {
@@ -161,9 +196,12 @@ export class Copilot {
       // The model turn goes back unchanged (it may carry thought signatures the API requires).
       contents.push(res.content ?? { role: 'model', parts: calls.map((c) => ({ functionCall: c })) });
       const parts: Part[] = await Promise.all(
-        calls.map(async (c) => ({
-          functionResponse: { id: c.id, name: c.name, response: await runTool(c.name ?? '', c.args ?? {}, toolCtx) },
-        })),
+        calls.map(async (c, i) => {
+          const t0 = performance.now();
+          const response = await runTool(c.name ?? '', c.args ?? {}, toolCtx);
+          run?.tool(i, response, performance.now() - t0);
+          return { functionResponse: { id: c.id, name: c.name, response } };
+        }),
       );
       contents.push({ role: 'user', parts });
     }

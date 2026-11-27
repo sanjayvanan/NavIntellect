@@ -49,6 +49,7 @@ const stopMaintenance = startMaintenance({
   latestRetentionDays: config.LATEST_RETENTION_DAYS,
   vesselsRetentionDays: config.VESSELS_RETENTION_DAYS,
   dbSizeLimitMb: config.DB_SIZE_LIMIT_MB,
+  aiTraceRetentionDays: config.AI_TRACE_RETENTION_DAYS,
 });
 const stopHeartbeat = startHeartbeat('ingestor');
 

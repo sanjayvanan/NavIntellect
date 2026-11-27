@@ -71,6 +71,14 @@ const schema = z.object({
   AI_RPM: z.coerce.number().int().min(1).default(8),
   /** Tool rounds per question before the model must answer (each round is one more request). */
   AI_MAX_TOOL_ROUNDS: z.coerce.number().int().min(1).max(5).default(3),
+  /**
+   * List prices in US$ per million tokens, used to show what the AI would cost on the paid tier
+   * (the free tier is billed $0). Set them to your model's prices from ai.google.dev/pricing.
+   */
+  AI_PRICE_INPUT_PER_M: z.coerce.number().min(0).default(0.1),
+  AI_PRICE_OUTPUT_PER_M: z.coerce.number().min(0).default(0.4),
+  /** AI request traces (ai_requests) are kept this many days. */
+  AI_TRACE_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
 
   ADMIN_EMAIL: z.string().optional(),
   ADMIN_PASSWORD: z.string().optional(),

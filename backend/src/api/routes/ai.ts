@@ -5,7 +5,9 @@ import { AiBudget } from '../../ai/budget.js';
 import { Copilot, CopilotError, type ModelClient } from '../../ai/copilot.js';
 import { Explainer } from '../../ai/explain.js';
 import { geminiClient } from '../../ai/gemini.js';
+import { AiTracer, pgTraceSink } from '../../ai/trace.js';
 import { config } from '../../config.js';
+import { pool } from '../../db/pool.js';
 import { requireRole } from '../auth/guard.js';
 import { HttpError, parse } from '../errors.js';
 
@@ -46,6 +48,8 @@ const guideBody = z.object({
  *   POST /api/ai/explain/ship/:mmsi -> { text, cached, usage }   (ship briefing)
  *   POST /api/ai/explain/alert/:id  -> { text, cached, usage }   (why an alert matters)
  *   POST /api/ai/guide    -> { title, steps: [{ target, say, action }], note, cached, usage }
+ *   GET  /api/ai/metrics?hours=24  (admin) -> latency, tokens, cost, errors, cache hits, tool failures
+ *   GET  /api/ai/traces?limit=&feature=  (admin) -> recent runs with each request and its tool calls
  * Without GEMINI_API_KEY (and no test model) the AI is reported as disabled.
  */
 export async function aiRoutes(app: FastifyInstance, opts: { redis: Redis; model?: ModelClient }) {
@@ -55,11 +59,73 @@ export async function aiRoutes(app: FastifyInstance, opts: { redis: Redis; model
     userDaily: config.AI_USER_DAILY_LIMIT,
     perMinute: config.AI_RPM,
   });
+  const tracer = new AiTracer(pgTraceSink((sql, params) => pool.query(sql, params)), {
+    model: config.GEMINI_MODEL,
+    prices: { inputPerM: config.AI_PRICE_INPUT_PER_M, outputPerM: config.AI_PRICE_OUTPUT_PER_M },
+  });
   const copilot = model
-    ? new Copilot({ model, budget, redis: opts.redis, cachePrefix: config.DB_SCHEMA, maxToolRounds: config.AI_MAX_TOOL_ROUNDS })
+    ? new Copilot({ model, budget, tracer, redis: opts.redis, cachePrefix: config.DB_SCHEMA, maxToolRounds: config.AI_MAX_TOOL_ROUNDS })
     : null;
-  const explainer = model ? new Explainer({ model, budget, redis: opts.redis, cachePrefix: config.DB_SCHEMA }) : null;
+  const explainer = model ? new Explainer({ model, budget, tracer, redis: opts.redis, cachePrefix: config.DB_SCHEMA }) : null;
   const viewer = { preHandler: requireRole('viewer') };
+  const admin = { preHandler: requireRole('admin') };
+
+  const metricsQuery = z.object({ hours: z.coerce.number().int().min(1).max(24 * 90).default(24) });
+  app.get('/api/ai/metrics', admin, async (req) => {
+    const { hours } = parse(metricsQuery, req.query);
+    const [byPrompt, tools] = await Promise.all([
+      pool.query(
+        `SELECT feature, model, prompt_version,
+                count(DISTINCT run_id)::int AS runs,
+                (count(*) FILTER (WHERE outcome <> 'cache_hit'))::int AS requests,
+                (count(*) FILTER (WHERE outcome = 'cache_hit'))::int AS cache_hits,
+                (count(*) FILTER (WHERE outcome = 'error'))::int AS errors,
+                round(percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms) FILTER (WHERE outcome <> 'cache_hit'))::int AS p50_ms,
+                round(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) FILTER (WHERE outcome <> 'cache_hit'))::int AS p95_ms,
+                round(percentile_cont(0.5) WITHIN GROUP (ORDER BY ttft_ms))::int AS p50_ttft_ms,
+                sum(prompt_tokens)::int AS prompt_tokens,
+                sum(output_tokens)::int AS output_tokens,
+                round(sum(cost_usd), 6)::float8 AS cost_usd
+         FROM ai_requests WHERE created_at > now() - make_interval(hours => $1)
+         GROUP BY feature, model, prompt_version
+         ORDER BY runs DESC`,
+        [hours],
+      ),
+      pool.query(
+        `SELECT t->>'name' AS tool, count(*)::int AS calls,
+                (count(*) FILTER (WHERE (t->>'ok')::boolean IS FALSE))::int AS failures,
+                round(avg((t->>'ms')::numeric))::int AS avg_ms
+         FROM ai_requests, jsonb_array_elements(tool_calls) t
+         WHERE created_at > now() - make_interval(hours => $1)
+         GROUP BY 1 ORDER BY calls DESC`,
+        [hours],
+      ),
+    ]);
+    return { hours, by_prompt: byPrompt.rows, tools: tools.rows };
+  });
+
+  const tracesQuery = z.object({
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+    feature: z.enum(['copilot', 'brief', 'alert', 'guide']).optional(),
+  });
+  app.get('/api/ai/traces', admin, async (req) => {
+    const q = parse(tracesQuery, req.query);
+    const { rows } = await pool.query(
+      `SELECT run_id, min(created_at) AS started_at, min(feature) AS feature, min(user_id::text) AS user_id,
+              min(model) AS model, min(prompt_version) AS prompt_version,
+              sum(latency_ms)::int AS latency_ms, sum(prompt_tokens + output_tokens)::int AS tokens,
+              round(sum(cost_usd), 6)::float8 AS cost_usd,
+              jsonb_agg(jsonb_build_object('round', round, 'outcome', outcome, 'error', error, 'latency_ms', latency_ms, 'ttft_ms', ttft_ms,
+                                           'prompt_tokens', prompt_tokens, 'output_tokens', output_tokens, 'tool_calls', tool_calls)
+                        ORDER BY round) AS requests
+       FROM ai_requests
+       WHERE run_id IN (SELECT run_id FROM ai_requests WHERE ($2::text IS NULL OR feature = $2)
+                        GROUP BY run_id ORDER BY max(created_at) DESC LIMIT $1)
+       GROUP BY run_id ORDER BY started_at DESC`,
+      [q.limit, q.feature ?? null],
+    );
+    return rows;
+  });
 
   app.get('/api/ai/status', viewer, async (req) => ({
     enabled: Boolean(copilot),

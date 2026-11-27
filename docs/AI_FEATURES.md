@@ -20,6 +20,7 @@ window bolted onto the side. Every idea below uses something the app already has
 | Map copilot (sidebar ✦ "AI copilot") | **Built** |
 | Ship briefing (✦ "AI briefing" in ship details) and alert explanation (✦ "Why it matters" under each alert) | **Built**: `backend/src/ai/explain.ts`, `frontend/src/components/AiExplain.jsx` |
 | Shadow-cursor guide (ask the copilot "How do I…?") | **Built**: Gemini structured output limited to the controls on screen; `frontend/src/guide/targets.js` (control list, `data-guide` names), `ShadowGuide.jsx` |
+| Observability: every AI request traced (`/api/ai/metrics`, `/api/ai/traces`) | **Built**: `backend/src/ai/trace.ts`, table `ai_requests` |
 | Draw zones by talking, voice, anomaly detection ("AI watch"), stuck detection for the guide | Planned |
 
 ### Switching the copilot on
@@ -51,6 +52,29 @@ Without a key the panel says the AI is not set up, and everything else works as 
 - `backend/test/integration.test.ts` ("AI copilot"): tool loop, visibility, cache, forced last round, budget.
 - `backend/test/ai.test.ts`: track summary maths.
 - `frontend/src/store/copilotSlice.test.js`: conversation state and ship links.
+
+---
+
+## AI engineering: how the copilot is measured
+
+### Observability (`backend/src/ai/trace.ts`, table `ai_requests`)
+A decorator wraps the model client, so neither the Gemini client nor the test fake changed. Every
+request records:
+- the feature, model and **prompt version** (a hash of the system prompt and the tool list);
+- the tool round and the outcome (answer, tool calls, cache hit or error);
+- latency and **time to first token** for streamed answers;
+- prompt and output tokens, and the **cost at list price** (set `AI_PRICE_*`; the free tier is
+  billed $0);
+- each tool call with its arguments, whether it worked and how long it took.
+
+The rows of one question share a `run_id` and are written in **one INSERT** when the run ends.
+A trace write that fails is logged and never breaks an answer. Old rows are pruned after
+`AI_TRACE_RETENTION_DAYS` (500 MB database).
+
+Admins read the traces through two endpoints:
+- `GET /api/ai/metrics?hours=24` gives, per feature, model and prompt version: runs, requests,
+  cache hits, errors, p50/p95 latency, tokens and cost. It also gives the failure rate per tool.
+- `GET /api/ai/traces` lists recent runs, each with every request and tool call.
 
 ---
 

@@ -119,6 +119,11 @@ The web app requires signing in, but the map's read endpoints stay open while `A
 | POST | `/api/auth/password` | |
 | GET/POST/PATCH | `/api/users`, GET `/api/audit` | Admin |
 | GET | `/api/health`, `/api/stats` | DB, Redis, ingest freshness, counts and storage size |
+| GET | `/api/ai/status` | Signed in: whether the AI is on, the model, today's usage |
+| POST | `/api/ai/copilot` | `{messages, context: {bbox, zoom, selected}}` → `{reply, actions, ships, usage, requests, cached}` |
+| POST | `/api/ai/explain/ship/:mmsi`, `/api/ai/explain/alert/:id`, `/api/ai/guide` | One-shot AI briefing, alert explanation, on-screen guide |
+| GET | `/api/ai/metrics?hours=24` | Admin. Per feature/model/prompt version: runs, requests, cache hits, errors, p50/p95 latency, p50 time to first token, tokens, cost at list price; per tool: calls, failures, average time |
+| GET | `/api/ai/traces?limit=50&feature=copilot` | Admin. Recent AI runs, each with its requests (round, outcome, latency, tokens, tool calls and whether they worked) |
 
 ### Ownership scopes (zones, annotations)
 

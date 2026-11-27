@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { pacificDay } from '../src/ai/budget.js';
 import { distanceNm, summarizeTrack } from '../src/ai/tools.js';
+import { AiTracer, memoryTraceSink, promptVersion } from '../src/ai/trace.js';
 
 describe('AI helpers', () => {
   it('measures distance in nautical miles', () => {
@@ -25,5 +26,30 @@ describe('AI helpers', () => {
   it('counts free-tier days in Pacific time', () => {
     expect(pacificDay(new Date('2026-11-26T07:59:00Z'))).toBe('2026-11-25'); // 23:59 PST
     expect(pacificDay(new Date('2026-11-26T08:00:00Z'))).toBe('2026-11-26');
+  });
+
+  it('traces requests: tokens, cost at list price, tool outcomes and failures', async () => {
+    const sink = memoryTraceSink();
+    const tracer = new AiTracer(sink, { model: 'm', prices: { inputPerM: 1, outputPerM: 4 } });
+    const run = tracer.run({ feature: 'copilot', userId: 'not-a-uuid', promptVersion: 'v1' });
+    let n = 0;
+    const model = run.wrap({
+      async generate() {
+        if (n++ === 1) throw new Error('boom');
+        return { functionCalls: [{ name: 'get_ship', args: { mmsi: 1 } }], usage: { prompt: 1000, output: 500 } };
+      },
+    });
+    await model.generate({ contents: [], systemInstruction: '', allowTools: true });
+    run.tool(0, { error: 'Ship not found.' }, 12.4);
+    await expect(model.generate({ contents: [], systemInstruction: '', allowTools: true })).rejects.toThrow('boom');
+    await run.finish();
+    await run.finish(); // written once
+    expect(sink.rows).toHaveLength(2);
+    expect(sink.rows[0]).toMatchObject({
+      user_id: null, round: 0, outcome: 'tool_calls', prompt_tokens: 1000, output_tokens: 500, cost_usd: 0.003,
+      tool_calls: [{ name: 'get_ship', args: { mmsi: 1 }, ok: false, ms: 12, error: 'Ship not found.' }],
+    });
+    expect(sink.rows[1]).toMatchObject({ round: 1, outcome: 'error', error: 'Error: boom' });
+    expect(promptVersion('a', [1])).not.toBe(promptVersion('a', [2]));
   });
 });

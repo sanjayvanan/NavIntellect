@@ -806,6 +806,30 @@ describe('AI copilot', () => {
     expect(errors).toEqual(['zone_id must be an id from list_zones (not a name).', 'Ship not found.', 'Unknown tool nope.']);
   });
 
+  it('traces every request: rounds, tool calls and how they went, cache hits; admins can read them', async () => {
+    const { rows } = await pool.query<{ run_id: string; round: number; outcome: string; tool_calls: { name: string; ok: boolean }[]; prompt_version: string }>(
+      `SELECT run_id, round, outcome, tool_calls, prompt_version FROM ai_requests WHERE feature = 'copilot' ORDER BY id`,
+    );
+    // Run 1: three rounds (tools, tools, answer). Run 2: a cache hit. Run 3: four rounds, the tool errors marked.
+    const runs = [...new Set(rows.map((r) => r.run_id))];
+    expect(runs).toHaveLength(3);
+    const first = rows.filter((r) => r.run_id === runs[0]);
+    expect(first.map((r) => r.outcome)).toEqual(['tool_calls', 'tool_calls', 'answer']);
+    expect(first[0]!.tool_calls.map((t) => [t.name, t.ok])).toEqual([['search_ships', true], ['list_zones', true]]);
+    expect(rows.filter((r) => r.run_id === runs[1]).map((r) => r.outcome)).toEqual(['cache_hit']);
+    const third = rows.filter((r) => r.run_id === runs[2]);
+    expect(third.flatMap((r) => r.tool_calls.map((t) => t.ok))).toEqual([false, false, false]);
+    expect(new Set(rows.map((r) => r.prompt_version)).size).toBe(1);
+
+    expect((await app.inject({ url: '/api/ai/metrics', headers: auth() })).statusCode).toBe(403); // viewers cannot
+    const metrics = (await app.inject({ url: '/api/ai/metrics?hours=1', headers: { authorization: `Bearer ${adminToken}` } })).json();
+    expect(metrics.by_prompt.find((p: { feature: string }) => p.feature === 'copilot')).toMatchObject({ runs: 3, requests: 7, cache_hits: 1, errors: 0 });
+    expect(metrics.tools.find((t: { tool: string }) => t.tool === 'get_ship')).toMatchObject({ calls: 1, failures: 1 });
+    const traces = (await app.inject({ url: '/api/ai/traces?feature=copilot&limit=1', headers: { authorization: `Bearer ${adminToken}` } })).json();
+    expect(traces).toHaveLength(1);
+    expect(traces[0].requests).toHaveLength(4);
+  });
+
   it('stops at the per-user daily budget', async () => {
     aiScript = [() => ({ text: 'one' }), () => ({ text: 'two' }), () => ({ text: 'three' })];
     // 3 + 4 requests used above; the limit is 10.

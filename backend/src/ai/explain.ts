@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { AiBudget, Usage } from './budget.js';
 import { CopilotError, reserveRequest, type ModelClient } from './copilot.js';
 import { runTool, type ApiGet, type ToolContext } from './tools.js';
+import { promptVersion, type AiTracer } from './trace.js';
 
 /**
  * One-shot AI features, all on demand (a button press), cached and counted in the same free-tier
@@ -77,6 +78,13 @@ Rules:
 - Use the fewest steps that complete the task (at most 7).
 - If the app cannot do what they ask, return no steps and explain briefly in "note".`;
 
+/** Prompt versions, recorded with every trace (they change when a prompt changes). */
+export const PROMPT_VERSIONS = {
+  brief: promptVersion(SHIP_PROMPT),
+  alert: promptVersion(ALERT_PROMPT),
+  guide: promptVersion(GUIDE_PROMPT, GUIDE_VERSION),
+};
+
 const guideOutput = z.object({
   title: z.string().trim().min(1).max(100).catch('How to do it'),
   steps: z
@@ -101,6 +109,7 @@ export class Explainer {
       budget: AiBudget;
       redis: Redis;
       cachePrefix: string;
+      tracer?: AiTracer;
       sleep?: (s: number) => Promise<void>;
     },
   ) {}
@@ -109,18 +118,32 @@ export class Explainer {
     return `${this.deps.cachePrefix}:ai:${kind}:${id}`;
   }
 
-  /** Cached answer, or ask Gemini once (one request from the user's budget) and cache it. */
-  private async once<T>(userId: string, key: string, ttl: number, make: () => Promise<T>): Promise<{ value: T; cached: boolean }> {
-    const hit = await this.deps.redis.get(key);
-    if (hit) return { value: JSON.parse(hit) as T, cached: true };
-    await reserveRequest(this.deps.budget, userId, this.deps.sleep);
-    const value = await make();
-    await this.deps.redis.set(key, JSON.stringify(value), 'EX', ttl);
-    return { value, cached: false };
+  /** Cached answer, or ask Gemini once (one request from the user's budget) and cache it. Traced. */
+  private async once<T>(
+    feature: keyof typeof PROMPT_VERSIONS,
+    userId: string,
+    key: string,
+    ttl: number,
+    make: (model: ModelClient) => Promise<T>,
+  ): Promise<{ value: T; cached: boolean }> {
+    const run = this.deps.tracer?.run({ feature, userId, promptVersion: PROMPT_VERSIONS[feature] });
+    try {
+      const hit = await this.deps.redis.get(key);
+      if (hit) {
+        run?.cacheHit();
+        return { value: JSON.parse(hit) as T, cached: true };
+      }
+      await reserveRequest(this.deps.budget, userId, this.deps.sleep);
+      const value = await make(run ? run.wrap(this.deps.model) : this.deps.model);
+      await this.deps.redis.set(key, JSON.stringify(value), 'EX', ttl);
+      return { value, cached: false };
+    } finally {
+      await run?.finish();
+    }
   }
 
-  private async text(systemInstruction: string, data: unknown): Promise<string> {
-    const res = await this.deps.model.generate({
+  private async text(model: ModelClient, systemInstruction: string, data: unknown): Promise<string> {
+    const res = await model.generate({
       contents: [{ role: 'user', parts: [{ text: JSON.stringify(data) }] }],
       systemInstruction,
       allowTools: false,
@@ -138,12 +161,12 @@ export class Explainer {
     const ship = await runTool('get_ship', { mmsi }, ctx);
     if (ship.error) throw new CopilotError(404, String(ship.error));
     const hour = new Date().toISOString().slice(0, 13);
-    const { value, cached } = await this.once(userId, this.key('brief', `${mmsi}:${hour}`), SHIP_TTL_S, async () => {
+    const { value, cached } = await this.once('brief', userId, this.key('brief', `${mmsi}:${hour}`), SHIP_TTL_S, async (model) => {
       const [track, alerts] = await Promise.all([
         runTool('get_track_summary', { mmsi, hours: 24 }, ctx),
         runTool('get_alerts', { mmsi, hours: 72, limit: 5 }, ctx),
       ]);
-      return this.text(SHIP_PROMPT, { now: new Date().toISOString(), ship: ship.result, last_24h: track.result ?? track, alerts: alerts.result ?? alerts });
+      return this.text(model, SHIP_PROMPT, { now: new Date().toISOString(), ship: ship.result, last_24h: track.result ?? track, alerts: alerts.result ?? alerts });
     });
     return { text: value, cached, usage: await this.deps.budget.usage(userId) };
   }
@@ -157,10 +180,10 @@ export class Explainer {
       id: string; type: string; severity: string; mmsi: number; vessel_name: string | null; zone_name: string | null;
       zone_kind: string | null; zone_rules: unknown; details: unknown; created_at: string; latitude: number | null; longitude: number | null;
     };
-    const { value, cached } = await this.once(userId, this.key('alert', a.id), ALERT_TTL_S, async () => {
+    const { value, cached } = await this.once('alert', userId, this.key('alert', a.id), ALERT_TTL_S, async (model) => {
       const ctx = toolContext(get);
       const [ship, track] = await Promise.all([runTool('get_ship', { mmsi: a.mmsi }, ctx), runTool('get_track_summary', { mmsi: a.mmsi, hours: 6 }, ctx)]);
-      return this.text(ALERT_PROMPT, {
+      return this.text(model, ALERT_PROMPT, {
         now: new Date().toISOString(),
         alert: {
           type: a.type, severity: a.severity, at: a.created_at, details: a.details,
@@ -187,8 +210,8 @@ export class Explainer {
     if (!ids.length) throw new CopilotError(400, 'No controls to point at.');
     const question = req.question.trim().replace(/\s+/g, ' ');
     const key = this.key('guide', hash([GUIDE_VERSION, question.toLowerCase(), req.layout, req.panel, ids]));
-    const { value, cached } = await this.once(userId, key, GUIDE_TTL_S, async () => {
-      const res = await this.deps.model.generate({
+    const { value, cached } = await this.once('guide', userId, key, GUIDE_TTL_S, async (model) => {
+      const res = await model.generate({
         contents: [{ role: 'user', parts: [{ text: JSON.stringify({ question, layout: req.layout, open_panel: req.panel, controls: req.targets }) }] }],
         systemInstruction: GUIDE_PROMPT,
         allowTools: false,
