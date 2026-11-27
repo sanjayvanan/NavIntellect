@@ -53,6 +53,7 @@ const TOOL_LABELS = {
   get_ship: 'Reading ship details',
   get_track_summary: 'Reading the track',
   get_alerts: 'Checking alerts',
+  search_knowledge: 'Looking up maritime rules',
   show_ship: 'Opening the ship',
   show_track: 'Drawing the track',
   show_zone: 'Finding the zone',

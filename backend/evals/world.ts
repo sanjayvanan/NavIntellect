@@ -1,3 +1,4 @@
+import { loadCorpus, type Chunk } from '../src/ai/knowledge.js';
 import type { ApiGet } from '../src/ai/tools.js';
 
 /**
@@ -149,6 +150,29 @@ function legacy(s: WorldShip, now: number) {
 
 const json = (status: number, body: unknown) => ({ status, body });
 
+/**
+ * Knowledge search for the evals: the real notes, ranked by shared terms (a stand-in for the
+ * database's hybrid search, so evals need no database; they measure the model, not the index).
+ */
+let corpus: Promise<Chunk[]> | null = null;
+const terms = (s: string) => new Set((s.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((w) => w.length > 2 || /\d/.test(w)).map((w) => w.replace(/s$/, '')));
+async function searchNotes(q: string, k: number) {
+  const chunks = await (corpus ??= loadCorpus());
+  const want = terms(q);
+  return chunks
+    .map((c) => {
+      const title = terms(c.title);
+      const body = terms(c.body);
+      let score = 0;
+      for (const w of want) score += (title.has(w) ? 3 : 0) + (body.has(w) ? 1 : 0);
+      return { c, score };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, k)
+    .map(({ c, score }) => ({ source: c.source, title: c.title, text: c.body, score, matched_by: ['keyword'] }));
+}
+
 /** The app's API, served from the world. `now` is fixed per call so a run is consistent. */
 export function worldApi(now = () => Date.now()): ApiGet {
   return async (path) => {
@@ -235,6 +259,11 @@ export function worldApi(now = () => Date.now()): ApiGet {
           entered_at: new Date(t - (alertsIn.get(z.id) ?? 600) * 60_000).toISOString(),
         })),
       });
+    }
+
+    if (p === '/api/knowledge/search') {
+      const text = q.get('q') ?? '';
+      return json(200, { mode: 'keyword', results: await searchNotes(text, Number(q.get('k') ?? 4)) });
     }
 
     if (p === '/api/alerts') {

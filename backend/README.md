@@ -125,6 +125,7 @@ The web app requires signing in, but the map's read endpoints stay open while `A
 | POST | `/api/ai/explain/ship/:mmsi`, `/api/ai/explain/alert/:id`, `/api/ai/guide` | One-shot AI briefing, alert explanation, on-screen guide |
 | GET | `/api/ai/metrics?hours=24` | Admin. Per feature/model/prompt version: runs, requests, cache hits, errors, p50/p95 latency, p50 time to first token, tokens, cost at list price; per tool: calls, failures, average time |
 | GET | `/api/ai/traces?limit=50&feature=copilot` | Admin. Recent AI runs, each with its requests (round, outcome, latency, tokens, tool calls and whether they worked) |
+| GET | `/api/knowledge/search?q=&k=4` | Signed in. Hybrid search (pgvector + full text) over `knowledge/*.md` → `{mode, results: [{source, title, text, score, matched_by}]}` |
 
 ### Ownership scopes (zones, annotations)
 
@@ -148,11 +149,12 @@ Vessel updates are coalesced per MMSI and sent at most once per second, filtered
 | `npm run replay -- file.jsonl --shift` | Feeds a recording through the full pipeline. Useful for offline demos. |
 | `npm run build` / `start:api` / `start:ingestor` | Production build and start. |
 | `npm run eval -- --dry-run` | Copilot evals (`evals/`): checks the cases and shows the Gemini budget a run would need. Without `--dry-run` it runs them against Gemini (spends free-tier requests; see `docs/AI_FEATURES.md`). |
+| `npm run knowledge:sync` | Loads `knowledge/*.md` into the knowledge base and embeds what changed (the API also does this when it starts). |
 
 ## Extending with AI
 The schema is built so an AI assistant can be added without restructuring:
 
 - **Text-to-SQL or agent tools:** every table lives in the `ais` schema with typed columns and indexes. A future assistant can get a read-only role on that schema (`GRANT USAGE ON SCHEMA ais`, `GRANT SELECT ON ALL TABLES IN SCHEMA ais`). `track_points()` makes packed history queryable as plain rows.
 - **Tool calling:** the REST endpoints are small, validated JSON functions: search, profile, track, area-in-time-window, alerts and zones. An OpenAPI spec can be generated with `@fastify/swagger` and handed to a model as tools.
-- **Semantic search or memory:** the `vector` (pgvector) extension is available on Supabase. Enable it in `extensions` and add embedding columns or tables, for example vessel profiles or alert narratives, in a new migration.
+- **Semantic search or memory:** pgvector is enabled (migration `015_knowledge.sql`) and used by the copilot's knowledge base; more embedding tables (vessel profiles, alert narratives) can follow the same pattern.
 - **Events to reason over:** `alerts`, `zone_presence` and `audit_log` record what happened, to whom and when.

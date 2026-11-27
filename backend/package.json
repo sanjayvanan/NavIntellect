@@ -20,6 +20,7 @@
     "capture": "tsx scripts/capture-aisstream.ts",
     "replay": "tsx scripts/replay-fixture.ts",
     "eval": "tsx evals/run.ts",
+    "knowledge:sync": "tsx scripts/knowledge-sync.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

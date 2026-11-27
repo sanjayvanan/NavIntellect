@@ -1,6 +1,7 @@
 import { ApiError, FunctionCallingConfigMode, GoogleGenAI, type FunctionCall, type GenerateContentConfig, type GenerateContentResponseUsageMetadata, type Part } from '@google/genai';
 import { logger } from '../shared/logger.js';
 import { CopilotError, type GenerateRequest, type ModelClient } from './copilot.js';
+import type { Embedder } from './knowledge.js';
 import { TOOL_DECLARATIONS } from './tools.js';
 
 const TIMEOUT_MS = 30_000;
@@ -86,6 +87,33 @@ export function geminiClient(apiKey: string, model: string): ModelClient {
         },
         () => !sentText, // once text reached the user, a retry would repeat it
       );
+    },
+  };
+}
+
+/** Gemini embeddings for the knowledge base: separate task types for documents and questions. */
+export function geminiEmbedder(apiKey: string, model: string, dims = 768): Embedder {
+  const ai = new GoogleGenAI({ apiKey });
+  return {
+    model: `${model}@${dims}`,
+    dims,
+    // Starting point for gemini-embedding at 768 dimensions; check it against the knowledge evals.
+    maxDistance: 0.6,
+    async embed(texts, kind) {
+      const out: number[][] = [];
+      for (let i = 0; i < texts.length; i += 100) {
+        const res = await ai.models.embedContent({
+          model,
+          contents: texts.slice(i, i + 100),
+          config: { taskType: kind === 'query' ? 'RETRIEVAL_QUERY' : 'RETRIEVAL_DOCUMENT', outputDimensionality: dims, abortSignal: AbortSignal.timeout(TIMEOUT_MS) },
+        });
+        const vectors = (res.embeddings ?? []).map((e) => e.values ?? []);
+        if (vectors.length !== Math.min(100, texts.length - i) || vectors.some((v) => v.length !== dims)) {
+          throw new Error(`embedding: expected ${dims}-dimension vectors from ${model}`);
+        }
+        out.push(...vectors);
+      }
+      return out;
     },
   };
 }

@@ -77,6 +77,8 @@ const schema = z.object({
    */
   AI_PRICE_INPUT_PER_M: z.coerce.number().min(0).default(0.1),
   AI_PRICE_OUTPUT_PER_M: z.coerce.number().min(0).default(0.4),
+  /** Embedding model for the knowledge base (RAG); 768-dimension vectors. */
+  GEMINI_EMBED_MODEL: z.string().default('gemini-embedding-001'),
   /** AI request traces (ai_requests) are kept this many days. */
   AI_TRACE_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
 

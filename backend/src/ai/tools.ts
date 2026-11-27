@@ -102,6 +102,18 @@ export const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
   {
+    name: 'search_knowledge',
+    description:
+      'Search the reference notes: AIS (navigational status and ship type codes, IMO, reception), MMSI country prefixes (MID), ' +
+      'collision rules (COLREGs), what behaviour means (loitering, AIS gaps, ship-to-ship transfers, spoofing, typical speeds), ' +
+      "and how this app works (zones, alert types and severities, how long data is kept). Not for live ship data.",
+    parametersJsonSchema: {
+      type: 'object',
+      properties: { query: { type: 'string', description: 'The question or key terms, e.g. "navigational status 5" or "MID 563 country".' } },
+      required: ['query'],
+    },
+  },
+  {
     name: 'show_ship',
     description: 'On the map: go to a ship and open its details. Use when the user wants to see/open/find a ship.',
     parametersJsonSchema: { type: 'object', properties: { mmsi: { type: 'integer' } }, required: ['mmsi'] },
@@ -395,6 +407,18 @@ const EXECUTORS: Record<string, Executor> = {
         return { type: r.type, severity: r.severity, ship: name, mmsi: r.mmsi, zone: cleanText(r.zone_name), at: r.created_at, ...textWarning({ name }) };
       }),
     };
+  },
+
+  async search_knowledge(a, ctx) {
+    const query = str(a.query);
+    if (!query || query.length < 2) throw new ToolError('query is required.');
+    const r = await getJson<{ results: { title: string; source: string; text: string }[] }>(
+      ctx,
+      `/api/knowledge/search?${new URLSearchParams({ q: query.slice(0, 300), k: '3' })}`,
+      'Knowledge',
+    );
+    if (!r.results.length) return { results: [], note: 'Nothing in the reference notes about this.' };
+    return { results: r.results.map((x) => ({ title: x.title, source: x.source, text: x.text })) };
   },
 
   async show_ship(a, ctx) {

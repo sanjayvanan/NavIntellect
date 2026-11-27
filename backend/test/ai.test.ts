@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { pacificDay } from '../src/ai/budget.js';
 import { distanceNm, summarizeTrack } from '../src/ai/tools.js';
 import { AiTracer, memoryTraceSink, promptVersion } from '../src/ai/trace.js';
+import { chunkMarkdown, keywordQuery, loadCorpus, numberQuery } from '../src/ai/knowledge.js';
 
 describe('AI helpers', () => {
   it('measures distance in nautical miles', () => {
@@ -51,5 +52,16 @@ describe('AI helpers', () => {
     });
     expect(sink.rows[1]).toMatchObject({ round: 1, outcome: 'error', error: 'Error: boom' });
     expect(promptVersion('a', [1])).not.toBe(promptVersion('a', [2]));
+  });
+
+  it('splits notes into titled sections and builds search queries', async () => {
+    const chunks = chunkMarkdown('x.md', '# Doc\n\nintro ignored\n\n## First\nOne.\n\n## Second\nTwo\nlines.\n## Empty\n');
+    expect(chunks.map((c) => [c.title, c.body])).toEqual([['Doc: First', 'One.'], ['Doc: Second', 'Two\nlines.']]);
+    expect(chunks[0]!.hash).not.toBe(chunks[1]!.hash);
+    expect(keywordQuery("What's MID 563? mid")).toBe('what | s | mid | 563');
+    expect(numberQuery('status 5, MID 563 and rule 15')).toBe('563 | 15'); // single digits are too common
+    const corpus = await loadCorpus();
+    expect(new Set(corpus.map((c) => c.source))).toEqual(new Set(['ais-basics.md', 'ais-codes.md', 'app.md', 'behaviour.md', 'collision-rules.md', 'mmsi.md']));
+    expect(corpus.every((c) => c.body.length > 100 && c.body.length < 1600)).toBe(true);
   });
 });

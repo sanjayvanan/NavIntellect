@@ -9,6 +9,7 @@ import { normalize } from '../src/ingest/normalize.js';
 import { createPipeline } from '../src/ingest/pipeline.js';
 import { CHANNELS, createRedis } from '../src/shared/redis.js';
 import type { ModelClient } from '../src/ai/copilot.js';
+import { KnowledgeBase, loadCorpus, syncKnowledge, type Embedder } from '../src/ai/knowledge.js';
 import { positionReport, shipStaticData } from './fixtures/messages.js';
 
 let app: Awaited<ReturnType<typeof buildServer>>;
@@ -36,6 +37,27 @@ const fakeModel: ModelClient = {
   },
 };
 
+/** Bag-of-words "embeddings": deterministic, no API, close enough to rank related notes together. */
+const embedCalls: string[][] = [];
+const fakeEmbedder: Embedder = {
+  model: 'fake-bow@768',
+  dims: 768,
+  maxDistance: 0.95,
+  async embed(texts) {
+    embedCalls.push(texts);
+    return texts.map((t) => {
+      const v = new Array<number>(768).fill(0);
+      for (const w of t.toLowerCase().match(/[a-z0-9]+/g) ?? []) {
+        let h = 7;
+        for (const ch of w) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+        v[h % 768]! += 1;
+      }
+      const n = Math.hypot(...v) || 1;
+      return v.map((x) => x / n);
+    });
+  },
+};
+
 const ingest = async (...envelopes: unknown[]) => {
   for (const e of envelopes) pipeline.batcher.push(...normalize(e));
   await pipeline.batcher.flush();
@@ -46,7 +68,7 @@ beforeAll(async () => {
   redis = createRedis('test');
   subscriber = createRedis('test-sub');
   pipeline = createPipeline({ redis, flushIntervalMs: 60_000, maxRows: 5000, maxBuffer: 50_000, alertCooldownMinutes: 0 });
-  app = await buildServer({ redis, subscriber, aiModel: fakeModel });
+  app = await buildServer({ redis, subscriber, aiModel: fakeModel, embedder: fakeEmbedder });
   await app.ready();
   await pool.query(`INSERT INTO users (email, password_hash, role) VALUES ('admin@test.local', $1, 'admin')`, [
     await hashPassword('admin-password-123'),
@@ -888,6 +910,70 @@ describe('AI copilot', () => {
     expect(Number(over.headers['retry-after'])).toBeGreaterThan(0);
     expect((await app.inject({ url: '/api/ai/status', headers: auth() })).json().usage.user_used_today).toBe(10);
     aiScript = [];
+  });
+});
+
+describe('knowledge base (RAG)', () => {
+  let token = '';
+  const query = (sql: string, params?: unknown[]) => pool.query(sql, params);
+
+  beforeAll(async () => {
+    token = (await app.inject({
+      method: 'POST', url: '/api/auth/register', remoteAddress: '10.9.9.9', payload: { email: 'kb-user@test.local', password: 'kb-user-password' },
+    })).json().access_token;
+  });
+
+  it('loads the notes once, embeds them, and only redoes what changed', async () => {
+    const corpus = await loadCorpus();
+    expect(corpus.length).toBeGreaterThan(20);
+    const first = await syncKnowledge(query, corpus, fakeEmbedder);
+    expect(first).toMatchObject({ chunks: corpus.length, written: corpus.length, removed: 0, embedded: corpus.length });
+    expect(await syncKnowledge(query, corpus, fakeEmbedder)).toMatchObject({ written: 0, removed: 0, embedded: 0 });
+    // One section edited, one removed: only those change.
+    const edited = corpus.map((c, i) => (i === 0 ? { ...c, body: c.body + ' Edited.', hash: 'changed' } : c)).slice(0, -1);
+    expect(await syncKnowledge(query, edited, fakeEmbedder)).toMatchObject({ written: 1, removed: 1, embedded: 1 });
+    await syncKnowledge(query, corpus, fakeEmbedder); // back to the real notes
+  });
+
+  it('finds notes by meaning and by exact terms (hybrid), for signed-in users', async () => {
+    expect((await app.inject({ url: '/api/knowledge/search?q=moored' })).statusCode).toBe(401);
+    const res = await app.inject({ url: '/api/knowledge/search?q=what does navigational status 5 mean', headers: { authorization: `Bearer ${token}` } });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.mode).toBe('hybrid');
+    expect(body.results[0]).toMatchObject({ title: 'AIS codes: Navigational status codes', source: 'ais-codes.md' });
+    expect(body.results[0].matched_by).toEqual(['keyword', 'vector']);
+    expect(body.results[0].text).toContain('5 = moored');
+    const mid = (await app.inject({ url: '/api/knowledge/search?q=MID 563 country&k=2', headers: { authorization: `Bearer ${token}` } })).json();
+    expect(mid.results.map((r: { title: string }) => r.title)).toContain('MMSI numbers: Common flag MIDs');
+  });
+
+  it('falls back to keywords when embeddings fail, and finds nothing for unrelated questions', async () => {
+    const broken: Embedder = { ...fakeEmbedder, embed: async () => { throw new Error('quota'); } };
+    const kb = new KnowledgeBase({ query, embedder: broken });
+    const r = await kb.search('who gives way when two ships are crossing');
+    expect(r.mode).toBe('keyword');
+    expect(r.results.map((x) => x.title)).toContain('Rules of the road (COLREGs, in plain words): Crossing, head-on and overtaking');
+    expect((await new KnowledgeBase({ query, embedder: null }).search('zzzqqq xyzzy')).results).toEqual([]);
+  });
+
+  it('is a copilot tool that reads the notes through the API', async () => {
+    const keys = await redis.keys('ais_test:ai:*');
+    if (keys.length) await redis.del(...keys);
+    aiCalls.length = 0;
+    aiScript = [
+      () => ({ functionCalls: [{ name: 'search_knowledge', args: { query: 'MMSI prefix 636' }, id: 'k1' }] }),
+      () => ({ text: 'MID 636 is Liberia (MMSI numbers: Common flag MIDs).' }),
+    ];
+    const res = await app.inject({
+      method: 'POST', url: '/api/ai/copilot', headers: { authorization: `Bearer ${token}` },
+      payload: { messages: [{ role: 'user', text: 'Which country is MMSI prefix 636?' }] },
+    });
+    expect(res.json()).toMatchObject({ reply: expect.stringContaining('Liberia'), requests: 2 });
+    const parts = aiCalls[1]!.contents.flatMap((c) => c.parts ?? []);
+    const found = parts.find((p) => p.functionResponse?.name === 'search_knowledge')!.functionResponse!.response as { result: { results: { title: string; text: string }[] } };
+    expect(found.result.results[0]!.text).toContain('636 and 637 = Liberia');
+    expect(aiCalls[0]!.systemInstruction).toContain('search_knowledge');
   });
 });
 

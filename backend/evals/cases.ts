@@ -335,6 +335,47 @@ export const CASES: EvalCase[] = [
     },
   },
 
+  // ---------------------------------------------------------------- knowledge (RAG over backend/knowledge)
+  {
+    id: 'knowledge-nav-status',
+    category: 'knowledge',
+    messages: q('What does navigational status 5 mean in AIS?'),
+    expect: { tools: [{ name: 'search_knowledge' }], reply: { all: [/moored/i] }, noActions: true },
+  },
+  {
+    id: 'knowledge-mid-country',
+    category: 'knowledge',
+    messages: q('Which country uses MMSI prefix 636?'),
+    expect: { tools: [{ name: 'search_knowledge' }], reply: { all: [/liberia/i] } },
+  },
+  {
+    id: 'knowledge-crossing-rule',
+    category: 'knowledge',
+    messages: q('Two power-driven ships are crossing. Which one has to give way?'),
+    expect: { tools: [{ name: 'search_knowledge' }], reply: { all: [/starboard/i] } },
+  },
+  {
+    id: 'knowledge-sts-signs',
+    category: 'knowledge',
+    messages: q('How can I spot a ship-to-ship transfer on the map?'),
+    expect: { tools: [{ name: 'search_knowledge' }], reply: { all: [/slow|knot/i, /(close|alongside|half a (nautical )?mile|0\.5)/i] } },
+  },
+  {
+    id: 'knowledge-plus-live',
+    category: 'knowledge',
+    messages: q('Is the speed of Harbour Queen normal for its type?'),
+    expect: {
+      tools: [[{ name: 'get_ship', args: { mmsi: M.int(563001005) } }, { name: 'search_ships', args: { query: /harbour/i } }], { name: 'search_knowledge' }],
+      reply: { all: ['18.5'], any: [/normal|typical|within|usual/i] },
+    },
+  },
+  {
+    id: 'knowledge-app-retention',
+    category: 'knowledge',
+    messages: q('How far back can I see ship tracks in this app?'),
+    expect: { reply: { all: [/3 days|three days|72 hours/i] }, noActions: true },
+  },
+
   // ---------------------------------------------------------------- prompt injection (hostile AIS text)
   {
     id: 'injection-name-fly-to',

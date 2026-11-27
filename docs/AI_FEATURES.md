@@ -20,10 +20,11 @@ window bolted onto the side. Every idea below uses something the app already has
 | Map copilot (sidebar ✦ "AI copilot") | **Built** |
 | Ship briefing (✦ "AI briefing" in ship details) and alert explanation (✦ "Why it matters" under each alert) | **Built**: `backend/src/ai/explain.ts`, `frontend/src/components/AiExplain.jsx` |
 | Shadow-cursor guide (ask the copilot "How do I…?") | **Built**: Gemini structured output limited to the controls on screen; `frontend/src/guide/targets.js` (control list, `data-guide` names), `ShadowGuide.jsx` |
-| Evals: 43 scored copilot cases (`npm run eval`) | **Built**: `backend/evals/` |
+| Evals: 49 scored copilot cases (`npm run eval`) | **Built**: `backend/evals/` |
 | Prompt-injection defences (hostile AIS text) | **Built**: `backend/src/ai/untrusted.ts` |
 | Observability: every AI request traced (`/api/ai/metrics`, `/api/ai/traces`) | **Built**: `backend/src/ai/trace.ts`, table `ai_requests` |
 | Streaming answers (Server-Sent Events) | **Built**: `POST /api/ai/copilot/stream`, `frontend/src/services/api.js` (`apiStream`) |
+| Knowledge base (RAG): hybrid pgvector + full-text search over maritime notes | **Built**: `backend/src/ai/knowledge.ts`, `backend/knowledge/*.md`, tool `search_knowledge` |
 | Draw zones by talking, voice, anomaly detection ("AI watch"), stuck detection for the guide | Planned |
 
 ### Switching the copilot on
@@ -51,12 +52,13 @@ Without a key the panel says the AI is not set up, and everything else works as 
 - **Data:** `search_ships`, `list_zones`, `get_ship`, `get_track_summary`, `get_alerts`.
 - **Map actions** (done by the browser): `show_ship`, `show_track`, `show_zone`, `fly_to`, `filter_ship_list`.
 
-**Tests:** these use a scripted fake model, so they never call Gemini.
+**Tests:** these use a scripted fake model (and a bag-of-words fake embedder), so they never call Gemini.
 - `backend/test/integration.test.ts` ("AI copilot"): tool loop, visibility, cache, forced last round, budget.
 - `backend/test/ai.test.ts`: track summary maths.
 - `frontend/src/store/copilotSlice.test.js`: conversation state, ship links, streamed text.
 - `backend/test/untrusted.test.ts`: cleaning and flagging of AIS text, the map-action policy.
 - `backend/test/evals.test.ts`: the eval world, the scorer, and whole cases run with a scripted model.
+- `backend/test/integration.test.ts` ("knowledge base (RAG)"): sync, hybrid search, keyword fallback, the tool.
 
 ---
 
@@ -69,8 +71,8 @@ Unit tests prove the plumbing works; evals measure whether the **model** answers
   same API paths and in the same response shapes as the app. The **real** copilot loop and tool executors
   run against it, so argument checks and result compaction are part of what is measured. The data never
   changes between runs, and no database is needed.
-- **The cases** (`evals/cases.ts`): 43 questions in 8 categories (search, details, track, zones and
-  alerts, map actions, grounding / saying no, multi-turn, prompt injection). Each case
+- **The cases** (`evals/cases.ts`): 49 questions in 9 categories (search, details, track, zones and
+  alerts, map actions, grounding / saying no, multi-turn, knowledge, prompt injection). Each case
   lists what a good answer **must** do, not one exact wording:
   - the tools it must call and their key arguments, such as a bbox that contains Singapore, a speed
     filter between 13 and 15 kn, or the right zone id;
@@ -153,6 +155,24 @@ Details:
 - A retry after a Gemini 503 happens only if no text has reached the user yet.
 - Each round still reserves one request from the budget.
 
+### Knowledge base / RAG (`backend/src/ai/knowledge.ts`)
+- **Corpus:** `backend/knowledge/*.md` holds short reference notes written for this app, so there is
+  no copyrighted text. Topics: AIS basics and codes, MMSI country prefixes, the collision rules in
+  plain words, what behaviour means (loitering, AIS gaps, ship-to-ship transfers, spoofing, typical
+  speeds) and how the app works.
+- **Chunks and sync:** each `##` section is one chunk. On start, the API writes changed sections and
+  embeds only what changed, using `gemini-embedding-001` at 768 dimensions with separate task types
+  for documents and queries.
+- **Hybrid search:**
+  - Two searches run: pgvector (HNSW, cosine) and Postgres full-text search. They are merged with
+    **Reciprocal Rank Fusion**, which needs no tuning between the two score scales.
+  - Sections containing an exact 2+ digit code from the question (a MID, a ship type, a rule
+    number) come first. Full-text rank has no IDF, and fusion would otherwise rank a section on the
+    same topic above the exact match. The tests caught this.
+  - Without embeddings (no key, or a quota error), search falls back to keywords. Query embeddings
+    are cached in Redis.
+- **Tool:** the copilot's `search_knowledge` tool calls `GET /api/knowledge/search` like its other
+  tools, and the system prompt tells it to name the note it used.
 
 ---
 

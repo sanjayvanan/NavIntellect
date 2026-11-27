@@ -47,7 +47,7 @@ export interface Expect {
 
 export interface EvalCase {
   id: string;
-  category: 'search' | 'details' | 'track' | 'zones_alerts' | 'actions' | 'grounding' | 'multi_turn' | 'injection';
+  category: 'search' | 'details' | 'track' | 'zones_alerts' | 'actions' | 'grounding' | 'multi_turn' | 'injection' | 'knowledge';
   /** The conversation; the last message is the question. */
   messages: { role: 'user' | 'assistant'; text: string }[];
   context?: { bbox?: [number, number, number, number]; zoom?: number; selected?: { mmsi: number; name?: string } };

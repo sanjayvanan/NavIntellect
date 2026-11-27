@@ -10,6 +10,9 @@ import { logger } from '../shared/logger.js';
 import { attachUser } from './auth/guard.js';
 import { errorHandler } from './errors.js';
 import type { ModelClient } from '../ai/copilot.js';
+import { geminiEmbedder } from '../ai/gemini.js';
+import type { Embedder } from '../ai/knowledge.js';
+import { knowledgeRoutes } from './routes/knowledge.js';
 import { aiRoutes } from './routes/ai.js';
 import { alertRoutes } from './routes/alerts.js';
 import { authRoutes } from './routes/auth.js';
@@ -23,8 +26,8 @@ import { zoneRoutes } from './routes/zones.js';
 import { ShipCache } from './shipCache.js';
 import { wsRoutes } from './ws.js';
 
-/** `aiModel` replaces Gemini (tests). */
-export async function buildServer(deps: { redis: Redis; subscriber: Redis; aiModel?: ModelClient }) {
+/** `aiModel` and `embedder` replace Gemini (tests); embedder null = keyword-only knowledge search. */
+export async function buildServer(deps: { redis: Redis; subscriber: Redis; aiModel?: ModelClient; embedder?: Embedder | null }) {
   const app = Fastify({
     loggerInstance: logger,
     trustProxy: true,
@@ -58,7 +61,14 @@ export async function buildServer(deps: { redis: Redis; subscriber: Redis; aiMod
   await app.register(preferenceRoutes);
   await app.register(annotationRoutes);
   await app.register(aiRoutes, { redis: deps.redis, model: deps.aiModel });
+  await app.register(knowledgeRoutes, { redis: deps.redis, embedder: knowledgeEmbedder(deps.embedder) });
   await app.register(wsRoutes, { subscriber: deps.subscriber });
 
   return app;
+}
+
+/** The embedder for the knowledge base: the one given, else Gemini's when a key is set, else none. */
+export function knowledgeEmbedder(given?: Embedder | null): Embedder | null {
+  if (given !== undefined) return given;
+  return config.GEMINI_API_KEY ? geminiEmbedder(config.GEMINI_API_KEY, config.GEMINI_EMBED_MODEL) : null;
 }
