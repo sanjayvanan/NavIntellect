@@ -68,11 +68,14 @@ const EyeIcon = ({ open }) => (
   </svg>
 )
 
-/** Full-screen sign-in / create-account page shown until the user is signed in. */
-function AuthScreen() {
+/**
+ * Full-screen sign-in / create-account page. `mode` comes from the address (/login or /signup);
+ * switching tabs reports the new mode so the address follows. `onBack` returns to the landing page.
+ */
+function AuthScreen({ mode: initialMode = 'signin', onModeChange, onBack }) {
   const dispatch = useDispatch()
   const { busy, error } = useSelector((state) => state.auth)
-  const [mode, setMode] = useState('signin') // 'signin' | 'register'
+  const [mode, setMode] = useState(initialMode) // 'signin' | 'register'
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -90,6 +93,11 @@ function AuthScreen() {
     firstInput.current?.focus()
   }, [mode])
 
+  // Back/forward between /login and /signup.
+  useEffect(() => {
+    setMode(initialMode)
+  }, [initialMode])
+
   useEffect(() => {
     if (shownError) setShake((n) => n + 1)
   }, [shownError])
@@ -97,6 +105,7 @@ function AuthScreen() {
   const switchMode = (next) => {
     if (next === mode) return
     setMode(next)
+    onModeChange?.(next)
     setLocalError(null)
     setConfirm('')
     dispatch(clearAuthError())
@@ -131,6 +140,12 @@ function AuthScreen() {
           <path className="wave w3" d="M0 180 C 300 140 600 220 900 180 S 1260 150 1440 180 V220 H0Z" />
         </svg>
       </div>
+
+      {onBack && (
+        <button type="button" className="auth-back" onClick={onBack}>
+          <span aria-hidden="true">←</span> Back to home
+        </button>
+      )}
 
       <div className="auth-layout">
         <section className="auth-hero">

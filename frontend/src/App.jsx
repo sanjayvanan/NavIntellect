@@ -1,9 +1,11 @@
 import ShadowGuide from './components/ShadowGuide'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import MapComponent from './components/MapComponent'
 import Sidebar from './components/Sidebar'
 import AuthScreen from './components/AuthScreen'
+import Landing from './landing/Landing'
+import { navigate, usePath } from './hooks/usePath'
 import BrandMark from './components/BrandMark'
 import { ExitFullscreenIcon, FullscreenIcon, MenuIcon } from './components/Icons'
 import { useFullscreen } from './hooks/useFullscreen'
@@ -66,11 +68,35 @@ function Workspace() {
   )
 }
 
+const AUTH_PATHS = { '/login': 'signin', '/signup': 'register' }
+
+/**
+ * Signed out: the landing page at '/', the sign-in page at '/login' and '/signup'.
+ * Signed in: the map, at '/'.
+ */
 function App() {
   const status = useSelector((state) => state.auth.status)
+  const path = usePath()
+  const signedIn = status === 'signedIn'
+
+  // After signing in from /login or /signup, the address goes back to '/'.
+  useEffect(() => {
+    if (signedIn && AUTH_PATHS[path]) navigate('/', { replace: true })
+  }, [signedIn, path])
+
   if (status === 'checking') return <Splash />
-  if (status !== 'signedIn') return <AuthScreen />
-  return <Workspace />
+  if (signedIn) return <Workspace />
+  const mode = AUTH_PATHS[path]
+  if (mode) {
+    return (
+      <AuthScreen
+        mode={mode}
+        onModeChange={(m) => navigate(m === 'register' ? '/signup' : '/login', { replace: true })}
+        onBack={() => navigate('/')}
+      />
+    )
+  }
+  return <Landing />
 }
 
 export default App

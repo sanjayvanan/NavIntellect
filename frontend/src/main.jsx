@@ -5,6 +5,7 @@ import { store } from './store/store'
 import { restoreSession, sessionExpired } from './store/authSlice'
 import { resetToDefaults } from './store/settingsSync'
 import { setSessionExpiredHandler } from './services/api'
+import { navigate } from './hooks/usePath'
 import App from './App'
 import ErrorBoundary from './components/ErrorBoundary'
 import './index.css'
@@ -13,6 +14,7 @@ const endSession = () => {
   if (store.getState().auth.status !== 'signedIn') return
   store.dispatch(sessionExpired())
   resetToDefaults(store.dispatch)
+  navigate('/login', { replace: true }) // straight back to signing in, not the landing page
 }
 setSessionExpiredHandler(endSession)
 // Signed out in another tab: follow it here too.
