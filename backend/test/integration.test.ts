@@ -28,6 +28,12 @@ const fakeModel: ModelClient = {
     if (!next) throw new Error('fake model: no scripted reply left');
     return next(req);
   },
+  // Streams scripted text in 8-character pieces (tool-call rounds may carry a preamble text too).
+  async stream(req, onText) {
+    const res = await fakeModel.generate(req);
+    for (const piece of res.text?.match(/[\s\S]{1,8}/g) ?? []) onText(piece);
+    return res;
+  },
 };
 
 const ingest = async (...envelopes: unknown[]) => {
@@ -828,6 +834,46 @@ describe('AI copilot', () => {
     const traces = (await app.inject({ url: '/api/ai/traces?feature=copilot&limit=1', headers: { authorization: `Bearer ${adminToken}` } })).json();
     expect(traces).toHaveLength(1);
     expect(traces[0].requests).toHaveLength(4);
+  });
+
+  // Streaming uses its own user, so the budget test below keeps its own count.
+  let streamToken = '';
+  const streamAuth = () => ({ authorization: `Bearer ${streamToken}` });
+
+  it('streams an answer as Server-Sent Events: tool progress, text pieces, then the result', async () => {
+    streamToken = (await app.inject({
+      method: 'POST', url: '/api/auth/register', remoteAddress: '10.9.9.8', payload: { email: 'stream-user@test.local', password: 'stream-user-pass' },
+    })).json().access_token;
+    aiScript = [
+      () => ({ text: 'Let me look.', functionCalls: [call('search_ships', { query: 'browse', limit: 1 })] }), // preamble, then tools
+      () => ({ text: 'BROWSE ALPHA (419500001) is the first of 3.' }),
+    ];
+    const res = await app.inject({
+      method: 'POST', url: '/api/ai/copilot/stream', headers: { ...streamAuth(), origin: 'http://localhost:5173' },
+      payload: { messages: [{ role: 'user', text: 'stream me the browse ships' }] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('text/event-stream');
+    expect(res.headers['access-control-allow-origin']).toBe('http://localhost:5173'); // CORS kept on the hijacked reply
+    const events = res.body.trim().split('\n\n').map((block) => {
+      const [ev, data] = block.split('\n');
+      return { event: ev!.slice(7), data: JSON.parse(data!.slice(6)) };
+    });
+    expect(events.map((e) => e.event)).toEqual(['delta', 'delta', 'discard', 'tools', 'delta', 'delta', 'delta', 'delta', 'delta', 'delta', 'done']);
+    expect(events[3]!.data).toEqual({ type: 'tools', round: 0, names: ['search_ships'] });
+    const streamed = events.slice(4, -1).map((e) => e.data.text).join('');
+    const done = events[events.length - 1]!.data;
+    expect(streamed).toBe(done.reply);
+    expect(done).toMatchObject({ reply: 'BROWSE ALPHA (419500001) is the first of 3.', requests: 2, cached: false });
+    const { rows } = await pool.query(`SELECT ttft_ms FROM ai_requests WHERE feature = 'copilot' ORDER BY id DESC LIMIT 2`);
+    expect(rows.every((r) => r.ttft_ms !== null && r.ttft_ms >= 0)).toBe(true); // both rounds streamed text
+  });
+
+  it('streams errors as an event', async () => {
+    aiScript = [];
+    const res = await app.inject({ method: 'POST', url: '/api/ai/copilot/stream', headers: streamAuth(), payload: { messages: [{ role: 'user', text: 'no script left' }] } });
+    expect(res.body).toMatch(/^event: error\ndata: \{"status":500/);
+    expect((await app.inject({ method: 'POST', url: '/api/ai/copilot/stream', headers: streamAuth(), payload: { messages: [] } })).statusCode).toBe(400);
   });
 
   it('stops at the per-user daily budget', async () => {

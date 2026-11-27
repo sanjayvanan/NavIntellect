@@ -46,6 +46,24 @@ const ACTION_LABELS = {
   filter_ships: (a) => `Ship list${a.query ? ` “${a.query}”` : ''}`,
 }
 
+/** What the copilot is doing while its tools run (streamed 'tools' events). */
+const TOOL_LABELS = {
+  search_ships: 'Searching ships',
+  list_zones: 'Reading zones',
+  get_ship: 'Reading ship details',
+  get_track_summary: 'Reading the track',
+  get_alerts: 'Checking alerts',
+  show_ship: 'Opening the ship',
+  show_track: 'Drawing the track',
+  show_zone: 'Finding the zone',
+  fly_to: 'Moving the map',
+  filter_ship_list: 'Opening the ship list',
+}
+const toolStatus = (names) => {
+  const labels = [...new Set((names ?? []).map((n) => TOOL_LABELS[n]).filter(Boolean))]
+  return labels.length ? `${labels.join(', ')}…` : 'Looking at the live data…'
+}
+
 /** Carries out a copilot map action (also used when the user clicks the action chip again). */
 function useMapActions() {
   const map = useMap()
@@ -164,7 +182,7 @@ function CopilotPanel({ style, theme, onClose }) {
   const dispatch = useDispatch()
   const map = useMap()
   const runAction = useMapActions()
-  const { enabled, usage, messages, busy, model, chats, activeChatId } = useSelector((state) => state.copilot)
+  const { enabled, usage, messages, busy, model, chats, activeChatId, stream } = useSelector((state) => state.copilot)
   const [showChats, setShowChats] = useState(false)
   const phone = usePhoneLayout()
   const [typing, setTyping] = useState(false) // the text box has focus
@@ -200,6 +218,11 @@ function CopilotPanel({ style, theme, onClose }) {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runAction is rebuilt every render
   }, [messages])
+
+  // Keep a streamed answer in view as it grows.
+  useEffect(() => {
+    if (stream?.text) listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
+  }, [stream?.text])
 
   const send = (question) => {
     const q = question.trim()
@@ -340,13 +363,22 @@ function CopilotPanel({ style, theme, onClose }) {
                 </div>
               ),
             )}
-            {busy && (
-              <div className="cp-msg assistant cp-thinking" role="status">
-                <span />
-                <span />
-                <span />
-                <small>Looking at the live data…</small>
+            {busy && stream?.text ? (
+              <div className="cp-msg assistant cp-streaming" aria-live="polite" aria-busy="true">
+                <p className="cp-text">
+                  {stream.text}
+                  <span className="cp-caret" aria-hidden="true" />
+                </p>
               </div>
+            ) : (
+              busy && (
+                <div className="cp-msg assistant cp-thinking" role="status">
+                  <span />
+                  <span />
+                  <span />
+                  <small>{toolStatus(stream?.tools)}</small>
+                </div>
+              )
             )}
           </div>
 

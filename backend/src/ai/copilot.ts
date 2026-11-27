@@ -40,7 +40,15 @@ export interface GenerateResult {
 /** The part of the Gemini client this needs (lets tests use a scripted fake). */
 export interface ModelClient {
   generate(req: GenerateRequest): Promise<GenerateResult>;
+  /** Same as generate, but calls onText with each piece of answer text as it is produced. Optional. */
+  stream?(req: GenerateRequest, onText: (text: string) => void): Promise<GenerateResult>;
 }
+
+/** Progress of a streamed answer. */
+export type CopilotEvent =
+  | { type: 'tools'; round: number; names: string[] } // the model asked for these tools; running them
+  | { type: 'delta'; text: string } // more answer text
+  | { type: 'discard' }; // the text so far was a preamble to tool calls, not the answer: clear it
 
 /**
  * Reserves one Gemini request in the free-tier budget. When only the per-minute limit is hit,
@@ -137,13 +145,20 @@ export class Copilot {
     return reserveRequest(this.deps.budget, userId, this.deps.sleep);
   }
 
-  async ask(opts: { userId: string; messages: ChatMessage[]; context: CopilotContext; get: ApiGet }): Promise<CopilotResult> {
-    const { userId, messages, context, get } = opts;
+  /** Answers a question. With onEvent (and a model that can stream), the answer text arrives as it is written. */
+  async ask(opts: {
+    userId: string;
+    messages: ChatMessage[];
+    context: CopilotContext;
+    get: ApiGet;
+    onEvent?: (e: CopilotEvent) => void;
+  }): Promise<CopilotResult> {
+    const { userId, messages, context, get, onEvent } = opts;
     const question = messages[messages.length - 1];
     if (!question || question.role !== 'user' || !question.text.trim()) throw new CopilotError(400, 'Ask a question.');
     const run = this.deps.tracer?.run({ feature: 'copilot', userId, promptVersion: COPILOT_PROMPT_VERSION });
     try {
-      return await this.answer(userId, messages, context, get, run);
+      return await this.answer(userId, messages, context, get, run, onEvent);
     } finally {
       await run?.finish();
     }
@@ -155,6 +170,7 @@ export class Copilot {
     context: CopilotContext,
     get: ApiGet,
     run: ReturnType<AiTracer['run']> | undefined,
+    onEvent: ((e: CopilotEvent) => void) | undefined,
   ): Promise<CopilotResult> {
     const question = messages[messages.length - 1]!;
     const model = run ? run.wrap(this.deps.model) : this.deps.model;
@@ -194,13 +210,23 @@ export class Copilot {
       const allowTools = round < this.deps.maxToolRounds;
       await this.reserve(userId);
       requests++;
-      const res = await model.generate({ contents, systemInstruction, allowTools });
+      const req = { contents, systemInstruction, allowTools };
+      let streamed = false;
+      const res =
+        onEvent && model.stream
+          ? await model.stream(req, (text) => {
+              streamed = true;
+              onEvent({ type: 'delta', text });
+            })
+          : await model.generate(req);
       tokens += res.tokens ?? 0;
       const calls = allowTools ? (res.functionCalls ?? []) : [];
       if (!calls.length) {
         reply = res.text?.trim() || '';
         break;
       }
+      if (streamed) onEvent?.({ type: 'discard' });
+      onEvent?.({ type: 'tools', round, names: calls.map((c) => c.name ?? '?') });
       // The model turn goes back unchanged (it may carry thought signatures the API requires).
       contents.push(res.content ?? { role: 'model', parts: calls.map((c) => ({ functionCall: c })) });
       const parts: Part[] = await Promise.all(

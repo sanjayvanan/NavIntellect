@@ -23,6 +23,7 @@ window bolted onto the side. Every idea below uses something the app already has
 | Evals: 43 scored copilot cases (`npm run eval`) | **Built**: `backend/evals/` |
 | Prompt-injection defences (hostile AIS text) | **Built**: `backend/src/ai/untrusted.ts` |
 | Observability: every AI request traced (`/api/ai/metrics`, `/api/ai/traces`) | **Built**: `backend/src/ai/trace.ts`, table `ai_requests` |
+| Streaming answers (Server-Sent Events) | **Built**: `POST /api/ai/copilot/stream`, `frontend/src/services/api.js` (`apiStream`) |
 | Draw zones by talking, voice, anomaly detection ("AI watch"), stuck detection for the guide | Planned |
 
 ### Switching the copilot on
@@ -53,7 +54,7 @@ Without a key the panel says the AI is not set up, and everything else works as 
 **Tests:** these use a scripted fake model, so they never call Gemini.
 - `backend/test/integration.test.ts` ("AI copilot"): tool loop, visibility, cache, forced last round, budget.
 - `backend/test/ai.test.ts`: track summary maths.
-- `frontend/src/store/copilotSlice.test.js`: conversation state and ship links.
+- `frontend/src/store/copilotSlice.test.js`: conversation state, ship links, streamed text.
 - `backend/test/untrusted.test.ts`: cleaning and flagging of AIS text, the map-action policy.
 - `backend/test/evals.test.ts`: the eval world, the scorer, and whole cases run with a scripted model.
 
@@ -139,6 +140,19 @@ Admins read the traces through two endpoints:
 - `GET /api/ai/metrics?hours=24` gives, per feature, model and prompt version: runs, requests,
   cache hits, errors, p50/p95 latency, tokens and cost. It also gives the failure rate per tool.
 - `GET /api/ai/traces` lists recent runs, each with every request and tool call.
+
+### Streaming (`POST /api/ai/copilot/stream`)
+Tool rounds run as before. As soon as a round produces text, it is streamed as Server-Sent Events:
+- `tools` events say which tools are running, so the panel can show "Searching ships…".
+- `delta` events carry pieces of the answer.
+- `discard` clears text that turned out to be a preamble to more tool calls.
+- `done` carries the same result as the JSON endpoint, including the map actions.
+
+Details:
+- The hijacked response copies the CORS and security headers by hand.
+- A retry after a Gemini 503 happens only if no text has reached the user yet.
+- Each round still reserves one request from the budget.
+
 
 ---
 

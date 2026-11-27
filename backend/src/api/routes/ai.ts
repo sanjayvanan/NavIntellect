@@ -45,6 +45,8 @@ const guideBody = z.object({
  * AI routes (signed-in users only, so each person has their own daily budget).
  *   GET  /api/ai/status   -> { enabled, model, usage }
  *   POST /api/ai/copilot  -> { reply, actions, ships, usage, ... }
+ *   POST /api/ai/copilot/stream -> Server-Sent Events: tools, delta, discard, then done (the same
+ *                                  result as /copilot) or error ({ status, error, retry_after })
  *   POST /api/ai/explain/ship/:mmsi -> { text, cached, usage }   (ship briefing)
  *   POST /api/ai/explain/alert/:id  -> { text, cached, usage }   (why an alert matters)
  *   POST /api/ai/guide    -> { title, steps: [{ target, say, action }], note, cached, usage }
@@ -146,6 +148,48 @@ export async function aiRoutes(app: FastifyInstance, opts: { redis: Redis; model
       });
     } catch (err) {
       throw toHttp(err, reply);
+    }
+  });
+
+  app.post('/api/ai/copilot/stream', viewer, async (req, reply) => {
+    if (!copilot) throw new HttpError(503, 'AI is not set up on this server (GEMINI_API_KEY is missing).');
+    const body = parse(askBody, req.body);
+    const get = apiAs(req.headers.authorization);
+    // From here on the response is a stream: Fastify's serialisation and hooks are bypassed, so the
+    // headers already set (CORS, security) are copied over by hand.
+    reply.hijack();
+    const raw = reply.raw;
+    raw.writeHead(200, {
+      ...(reply.getHeaders() as Record<string, string>),
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-cache, no-transform',
+      'x-accel-buffering': 'no', // proxies (nginx) must not buffer the stream
+      connection: 'keep-alive',
+    });
+    let open = true;
+    raw.on('close', () => {
+      open = false;
+    });
+    const send = (event: string, data: unknown) => {
+      if (open) raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    try {
+      const result = await copilot.ask({
+        userId: req.user!.id,
+        messages: body.messages,
+        context: { bbox: body.context.bbox ?? null, zoom: body.context.zoom ?? null, selected: body.context.selected ?? null },
+        get,
+        onEvent: (e) => send(e.type, e),
+      });
+      send('done', result);
+    } catch (err) {
+      if (err instanceof CopilotError) send('error', { status: err.status, error: err.message, retry_after: err.retryAfter ?? null });
+      else {
+        req.log.error({ err }, 'copilot stream failed');
+        send('error', { status: 500, error: 'Something went wrong.' });
+      }
+    } finally {
+      raw.end();
     }
   });
 

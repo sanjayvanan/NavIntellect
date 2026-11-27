@@ -111,7 +111,7 @@ export class TraceRun {
     return row;
   }
 
-  /** The model, measured: each generate() call adds a row (also when it throws). */
+  /** The model, measured: each generate() / stream() call adds a row (also when it throws). */
   wrap(model: ModelClient): ModelClient {
     const measure = async (req: GenerateRequest, call: (firstText: () => void) => Promise<GenerateResult>) => {
       const round = this.rows.length;
@@ -144,7 +144,21 @@ export class TraceRun {
         throw err;
       }
     };
-    return { generate: (req) => measure(req, () => model.generate(req)) };
+    const stream = model.stream?.bind(model);
+    return {
+      generate: (req) => measure(req, () => model.generate(req)),
+      ...(stream
+        ? {
+            stream: (req: GenerateRequest, onText: (t: string) => void) =>
+              measure(req, (firstText) =>
+                stream(req, (t) => {
+                  firstText();
+                  onText(t);
+                }),
+              ),
+          }
+        : {}),
+    };
   }
 
   /** Records how the i-th tool call asked for in the latest request went. */

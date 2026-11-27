@@ -92,8 +92,8 @@ export function refreshSession(staleAccessToken) {
   return refreshing
 }
 
-/** fetch() against the API with the bearer token; refreshes once on 401. Returns parsed JSON. */
-export async function apiFetch(path, { method = 'GET', body, keepalive = false, signal } = {}) {
+/** fetch() with the bearer token; refreshes once on 401. Returns the Response (status checked). */
+async function authedFetch(path, { method = 'GET', body, keepalive = false, signal } = {}) {
   const send = (session) =>
     fetch(`${API_BASE_URL}${path}`, {
       method,
@@ -118,5 +118,49 @@ export async function apiFetch(path, { method = 'GET', body, keepalive = false, 
     res = await send(session)
   }
   if (!res.ok) throw await readError(res)
+  return res
+}
+
+/** fetch() against the API with the bearer token; refreshes once on 401. Returns parsed JSON. */
+export async function apiFetch(path, options = {}) {
+  const res = await authedFetch(path, options)
   return res.status === 204 ? null : res.json()
+}
+
+/**
+ * POST that answers with Server-Sent Events. Calls onEvent(name, data) for each event; resolves
+ * with the data of the final `done` event, or throws an ApiError for an `error` event.
+ */
+export async function apiStream(path, { body, signal, onEvent }) {
+  const res = await authedFetch(path, { method: 'POST', body, signal })
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let result
+  const handle = (block) => {
+    let event = 'message'
+    let data = ''
+    for (const line of block.split('\n')) {
+      if (line.startsWith('event:')) event = line.slice(6).trim()
+      else if (line.startsWith('data:')) data += line.slice(5).trim()
+    }
+    if (!data) return
+    const parsed = JSON.parse(data)
+    if (event === 'error') throw new ApiError(parsed.status ?? 500, parsed.error || 'Something went wrong.')
+    if (event === 'done') result = parsed
+    else onEvent?.(event, parsed)
+  }
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let end
+    while ((end = buffer.indexOf('\n\n')) >= 0) {
+      handle(buffer.slice(0, end))
+      buffer = buffer.slice(end + 2)
+    }
+  }
+  if (buffer.trim()) handle(buffer)
+  if (!result) throw new ApiError(502, 'The answer was cut off. Try again.')
+  return result
 }

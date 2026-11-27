@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import reducer, { askCopilot, clearConversation, conversationRestored, deleteChat, linkShips, loadChat, openChat, saveChat } from './copilotSlice'
+import reducer, { askCopilot, clearConversation, conversationRestored, copilotStreamEvent, deleteChat, linkShips, loadChat, openChat, saveChat } from './copilotSlice'
 
 describe('copilot', () => {
   it('turns ship names and MMSIs in an answer into links', () => {
@@ -29,6 +29,22 @@ describe('copilot', () => {
     s = reducer(reducer(s, askCopilot.pending('r2', arg)), askCopilot.rejected(new Error('You have used your 30 AI requests for today.'), 'r2', arg))
     expect(s.messages.at(-1)).toMatchObject({ role: 'assistant', error: true, text: 'You have used your 30 AI requests for today.' })
     expect(reducer(s, clearConversation()).messages).toEqual([])
+  })
+
+  it('shows a streamed answer as it is written, then the final answer', () => {
+    const arg = { text: 'Which ships?', context: {} }
+    let s = reducer(undefined, askCopilot.pending('r1', arg))
+    s = reducer(s, copilotStreamEvent({ event: 'delta', text: 'Let me ' }))
+    s = reducer(s, copilotStreamEvent({ event: 'discard' })) // that was a preamble to tool calls
+    s = reducer(s, copilotStreamEvent({ event: 'tools', names: ['search_ships'] }))
+    expect(s.stream).toEqual({ text: '', tools: ['search_ships'] })
+    s = reducer(s, copilotStreamEvent({ event: 'delta', text: 'Two ' }))
+    s = reducer(s, copilotStreamEvent({ event: 'delta', text: 'ships.' }))
+    expect(s.stream).toEqual({ text: 'Two ships.', tools: [] })
+    s = reducer(s, askCopilot.fulfilled({ reply: 'Two ships.', actions: [], ships: [] }, 'r1', arg))
+    expect(s.stream).toBeNull()
+    expect(s.messages.at(-1).text).toBe('Two ships.')
+    expect(reducer(s, copilotStreamEvent({ event: 'delta', text: 'late' })).stream).toBeNull() // ignored when idle
   })
 
   it('keeps a list of chats and switches between them', () => {

@@ -1,4 +1,4 @@
-import { ApiError, FunctionCallingConfigMode, GoogleGenAI, type GenerateContentConfig, type GenerateContentResponseUsageMetadata } from '@google/genai';
+import { ApiError, FunctionCallingConfigMode, GoogleGenAI, type FunctionCall, type GenerateContentConfig, type GenerateContentResponseUsageMetadata, type Part } from '@google/genai';
 import { logger } from '../shared/logger.js';
 import { CopilotError, type GenerateRequest, type ModelClient } from './copilot.js';
 import { TOOL_DECLARATIONS } from './tools.js';
@@ -37,12 +37,12 @@ export function geminiClient(apiKey: string, model: string): ModelClient {
   const ai = new GoogleGenAI({ apiKey });
 
   /** Runs `call`; Gemini's free tier is sometimes briefly overloaded ("high demand", 503): try once more. */
-  async function withRetry<T>(call: () => Promise<T>): Promise<T> {
+  async function withRetry<T>(call: () => Promise<T>, canRetry: () => boolean = () => true): Promise<T> {
     for (let attempt = 0; ; attempt++) {
       try {
         return await call();
       } catch (err) {
-        if (attempt === 0 && isTransient(err)) {
+        if (attempt === 0 && isTransient(err) && canRetry()) {
           logger.warn({ status: (err as ApiError).status }, 'gemini busy, retrying once');
           await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
           continue;
@@ -58,6 +58,35 @@ export function geminiClient(apiKey: string, model: string): ModelClient {
         const res = await ai.models.generateContent({ model, contents: req.contents, config: configFor(req) });
         return { functionCalls: res.functionCalls, text: res.text, content: res.candidates?.[0]?.content, ...usageOf(res.usageMetadata) };
       }),
+
+    // Streams the answer text. The model turn is rebuilt from every part received (thought
+    // signatures included, which the API needs back on the next round).
+    stream(req, onText) {
+      let sentText = false;
+      return withRetry(
+        async () => {
+          const it = await ai.models.generateContentStream({ model, contents: req.contents, config: configFor(req) });
+          const parts: Part[] = [];
+          const calls: FunctionCall[] = [];
+          let text = '';
+          let meta: GenerateContentResponseUsageMetadata | undefined;
+          for await (const chunk of it) {
+            for (const p of chunk.candidates?.[0]?.content?.parts ?? []) {
+              parts.push(p);
+              if (p.functionCall) calls.push(p.functionCall);
+              if (p.text && !p.thought) {
+                text += p.text;
+                sentText = true;
+                onText(p.text);
+              }
+            }
+            if (chunk.usageMetadata) meta = chunk.usageMetadata;
+          }
+          return { functionCalls: calls.length ? calls : undefined, text, content: { role: 'model', parts }, ...usageOf(meta) };
+        },
+        () => !sentText, // once text reached the user, a retry would repeat it
+      );
+    },
   };
 }
 

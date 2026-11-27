@@ -81,7 +81,7 @@ function syncActiveChat(state) {
 export const loadCopilotStatus = createAsyncThunk('copilot/status', () => copilotApi.status())
 
 /** Payload { text, context }. Sends the recent conversation plus the new question. */
-export const askCopilot = createAsyncThunk('copilot/ask', async ({ text, context }, { getState, signal }) => {
+export const askCopilot = createAsyncThunk('copilot/ask', async ({ text, context }, { getState, signal, dispatch }) => {
   // `pending` has already added this question to the list: leave it out of the history.
   // Questions that failed are left out together with their error, so roles keep alternating.
   const earlier = getState().copilot.messages.slice(0, -1)
@@ -89,7 +89,9 @@ export const askCopilot = createAsyncThunk('copilot/ask', async ({ text, context
     .filter((m, i) => !m.error && !earlier[i + 1]?.error)
     .slice(-HISTORY_SENT)
     .map((m) => ({ role: m.role, text: m.text }))
-  return copilotApi.ask([...history, { role: 'user', text }], context, signal)
+  return copilotApi.askStream([...history, { role: 'user', text }], context, signal, (event, data) =>
+    dispatch(copilotStreamEvent({ event, ...data })),
+  )
 })
 
 const initialState = {
@@ -100,6 +102,8 @@ const initialState = {
   chats: [], // all saved chats, including the open one once it has messages
   activeChatId: null,
   busy: false,
+  // The answer being written: { text, tools } (tools = names of the tools running now), or null.
+  stream: null,
   // Ask the Track info panel to open with these filters ({ query, zone_id, sort, at }).
   shipListRequest: null,
 }
@@ -135,6 +139,17 @@ const copilotSlice = createSlice({
       state.activeChatId = activeChatId
       state.messages = asOld(chats.find((c) => c.id === activeChatId)?.messages ?? [])
     },
+    /** A streamed answer's progress: 'tools' (now running), 'delta' (more text), 'discard' (clear it). */
+    copilotStreamEvent: (state, action) => {
+      if (!state.busy) return
+      const s = (state.stream ??= { text: '', tools: [] })
+      const { event } = action.payload
+      if (event === 'delta') {
+        s.text += action.payload.text ?? ''
+        s.tools = []
+      } else if (event === 'discard') s.text = ''
+      else if (event === 'tools') s.tools = action.payload.names ?? []
+    },
     /** Latest AI usage, from any AI answer (explanations, guides). */
     usageUpdated: (state, action) => {
       state.usage = action.payload
@@ -158,18 +173,21 @@ const copilotSlice = createSlice({
       })
       .addCase(askCopilot.pending, (state, action) => {
         state.busy = true
+        state.stream = { text: '', tools: [] }
         state.messages.push({ id: nextId++, role: 'user', text: action.meta.arg.text })
         syncActiveChat(state)
       })
       .addCase(askCopilot.fulfilled, (state, action) => {
         const r = action.payload
         state.busy = false
+        state.stream = null
         state.usage = r.usage ?? state.usage
         state.messages.push({ id: nextId++, role: 'assistant', text: r.reply, actions: r.actions ?? [], ships: r.ships ?? [], cached: r.cached })
         syncActiveChat(state)
       })
       .addCase(askCopilot.rejected, (state, action) => {
         state.busy = false
+        state.stream = null
         if (action.meta.aborted) return
         state.messages.push({ id: nextId++, role: 'assistant', text: action.error.message || 'Something went wrong.', error: true })
         syncActiveChat(state)
@@ -200,7 +218,7 @@ const copilotSlice = createSlice({
   },
 })
 
-export const { clearConversation, conversationRestored, deleteChat, openChat, requestShipList, usageUpdated } = copilotSlice.actions
+export const { clearConversation, conversationRestored, copilotStreamEvent, deleteChat, openChat, requestShipList, usageUpdated } = copilotSlice.actions
 export default copilotSlice.reducer
 
 /**
