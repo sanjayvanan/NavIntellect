@@ -10,7 +10,7 @@ import './AiExplain.css'
  * when pressed: answers are generated once on the server, cached and counted in the AI budget.
  * Hidden when the server has no AI. `load(signal)` -> { text, cached, usage }.
  */
-function AiExplain({ load, label, guide, className = '' }) {
+function AiExplain({ load, label, guide, className = '', iconOnly = false }) {
   const dispatch = useDispatch()
   const enabled = useSelector((state) => state.copilot.enabled)
   const [state, setState] = useState({ status: 'idle' })
@@ -36,16 +36,21 @@ function AiExplain({ load, label, guide, className = '' }) {
 
   return (
     <div className={`ai-explain ${className}`}>
-      {state.status === 'idle' && (
-        <button type="button" className="ai-explain-btn" data-guide={guide} onClick={run}>
-          <AiSparkIcon size={15} />
-          {label}
-        </button>
-      )}
+      {state.status === 'idle' &&
+        (iconOnly ? (
+          <button type="button" className="ai-explain-icon" data-guide={guide} onClick={run} title={`${label} (AI)`} aria-label={`${label} (AI)`}>
+            <AiSparkIcon size={14} />
+          </button>
+        ) : (
+          <button type="button" className="ai-explain-btn" data-guide={guide} onClick={run}>
+            <AiSparkIcon size={13} />
+            {label}
+          </button>
+        ))}
       {state.status === 'loading' && (
         <div className="ai-explain-loading" role="status">
-          <AiSparkIcon size={15} />
-          <span>Thinking…</span>
+          <AiSparkIcon size={13} />
+          <span>{iconOnly ? `${label}…` : 'Thinking…'}</span>
         </div>
       )}
       {state.status === 'done' && (

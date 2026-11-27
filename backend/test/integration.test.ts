@@ -395,6 +395,42 @@ describe('geofences and alerts', () => {
     expect(bad.statusCode).toBe(400);
   });
 
+  it('does not alert for ships already inside when alerts are switched on, and deletes alerts with the zone', async () => {
+    const box = { type: 'Polygon', coordinates: [[[80.0, 10.0], [80.5, 10.0], [80.5, 10.5], [80.0, 10.5], [80.0, 10.0]]] };
+    const headers = { authorization: `Bearer ${adminToken}` };
+    const zone = (await app.inject({
+      method: 'POST', url: '/api/zones', headers,
+      payload: { name: 'Quiet start', kind: 'monitoring', geometry: box, scope: 'shared', active: false },
+    })).json();
+    // Already inside (and stopped) before the alerts are on; another ship still outside.
+    await ingest(positionReport({ mmsi: 419700001, lat: 10.2, lon: 80.2, sog: 0, time: minsAgo(5) }));
+    await ingest(positionReport({ mmsi: 419700002, lat: 9.5, lon: 80.2, sog: 10, time: minsAgo(5) }));
+
+    expect((await app.inject({ method: 'PATCH', url: `/api/zones/${zone.id}`, headers, payload: { active: true } })).statusCode).toBe(200);
+    const { rows } = await pool.query(`SELECT mmsi FROM zone_presence WHERE zone_id = $1`, [zone.id]);
+    expect(rows.map((r) => r.mmsi)).toEqual([419700001]); // recorded quietly
+
+    // Both report again: the one already inside stays quiet, the one coming in alerts.
+    await ingest(positionReport({ mmsi: 419700001, lat: 10.21, lon: 80.2, sog: 0, time: minsAgo(2) }));
+    await ingest(positionReport({ mmsi: 419700002, lat: 10.1, lon: 80.2, sog: 10, time: minsAgo(2) }));
+    const alerts = (await app.inject({ url: `/api/alerts?zone_id=${zone.id}`, headers })).json() as { type: string; mmsi: number }[];
+    expect(alerts.map((a) => [a.type, a.mmsi])).toEqual([['zone_enter', 419700002]]);
+
+    // Created with alerts on: the same quiet start.
+    const zone2 = (await app.inject({
+      method: 'POST', url: '/api/zones', headers,
+      payload: { name: 'Quiet start 2', kind: 'monitoring', geometry: box, scope: 'shared', active: true },
+    })).json();
+    await ingest(positionReport({ mmsi: 419700001, lat: 10.22, lon: 80.2, sog: 0, time: minsAgo(1) }));
+    expect((await app.inject({ url: `/api/alerts?zone_id=${zone2.id}`, headers })).json()).toEqual([]);
+
+    // Deleting a zone deletes its alerts (no nameless "entered a zone" left behind).
+    await app.inject({ method: 'DELETE', url: `/api/zones/${zone.id}`, headers });
+    await app.inject({ method: 'DELETE', url: `/api/zones/${zone2.id}`, headers });
+    const { rows: left } = await pool.query(`SELECT count(*)::int AS n FROM alerts WHERE mmsi IN (419700001, 419700002)`);
+    expect(left[0].n).toBe(0);
+  }, 60_000); // a dozen round trips to the (remote) database
+
   it('raises enter, speeding and exit alerts and pushes them over Redis', async () => {
     const received: { type: string }[] = [];
     const sub = createRedis('test-alerts');

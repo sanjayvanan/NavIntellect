@@ -128,6 +128,28 @@ export async function evaluateZones(latest: PositionMsg[], cooldownMinutes: numb
   });
 }
 
+/**
+ * Records the ships already inside a zone, without alerts, when its alerts start (zone created
+ * with alerts on, alerts switched on, or the zone redrawn). Without this, every ship already
+ * there would look like it had just "entered" on its next report. Loitering is timed from now;
+ * ships already silent longer than the AIS-gap limit are not reported as a new gap.
+ * Uses positions from the live map (ships heard in the last 7 days).
+ */
+export async function seedZonePresence(client: pg.PoolClient, zoneId: string, gapMinutes: number): Promise<number> {
+  await client.query(`DELETE FROM zone_presence WHERE zone_id = $1`, [zoneId]);
+  const { rowCount } = await client.query(
+    `INSERT INTO zone_presence (zone_id, mmsi, entered_at, last_seen_at, slow_since, gap_alerted)
+     SELECT z.id, l.mmsi, l.ts, l.ts,
+            CASE WHEN l.sog < ${LOITER_SOG_KN} THEN now() END,
+            l.ts < now() - make_interval(mins => $2::int)
+     FROM zones z JOIN vessel_latest l ON ST_Covers(z.geom, l.geom)
+     WHERE z.id = $1 AND l.ts > now() - interval '7 days'
+     ON CONFLICT (zone_id, mmsi) DO NOTHING`,
+    [zoneId, Math.round(gapMinutes)],
+  );
+  return rowCount ?? 0;
+}
+
 /** Vessels inside a zone that stopped reporting: likely AIS switched off. */
 export async function sweepAisGaps(gapMinutes: number, cooldownMinutes: number): Promise<AlertRow[]> {
   return withTransaction(async (client) => {

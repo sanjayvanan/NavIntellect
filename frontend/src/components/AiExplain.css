@@ -14,20 +14,44 @@
 .ai-explain-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 11px;
-  border: 1px solid rgba(124, 58, 237, 0.35);
-  border-radius: 999px;
-  background: var(--ai-soft);
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid rgba(124, 58, 237, 0.25);
+  border-radius: 6px;
+  background: transparent;
   color: var(--ai-accent);
   font: inherit;
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .ai-explain-btn:hover {
   border-color: var(--ai-accent);
+  background: var(--ai-soft);
+}
+
+/* Icon-only (under each alert): a small ✦ at the right of the row. */
+.ai-explain-icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ai-accent);
+  opacity: 0.75;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.ai-explain-icon:hover,
+.ai-explain-icon:focus-visible {
+  opacity: 1;
+  background: var(--ai-soft);
 }
 
 .ai-explain-loading {
@@ -35,7 +59,7 @@
   align-items: center;
   gap: 6px;
   color: var(--ai-accent);
-  font-size: 12.5px;
+  font-size: 12px;
 }
 
 .ai-explain-loading svg {
@@ -101,9 +125,27 @@
   background: none;
 }
 
-/* Under an alert in Notifications. */
+/* Under an alert in Notifications: the ✦ sits at the row's right edge; the answer opens below. */
+.notif-list li {
+  position: relative;
+}
+
 .notif-explain {
-  padding: 0 8px 8px 44px;
+  padding: 0 8px 0 44px;
+}
+
+.notif-explain:has(.ai-explain-icon) {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  margin-top: -13px;
+  padding: 0;
+}
+
+.notif-explain .ai-explain-answer,
+.notif-explain .ai-explain-loading,
+.notif-explain .ai-explain-error {
+  margin-bottom: 8px;
 }
 
 @media (prefers-reduced-motion: reduce) {

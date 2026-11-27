@@ -1,5 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { seedZonePresence } from '../../alerts/engine.js';
+import { config } from '../../config.js';
 import { audit } from '../../db/audit.js';
 import { pool, withTransaction } from '../../db/pool.js';
 import { readAccess, requireRole } from '../auth/guard.js';
@@ -179,6 +181,8 @@ export async function zoneRoutes(app: FastifyInstance) {
           b.shape, b.shape_meta,
         ],
       );
+      // Ships already inside are recorded quietly: only ships that come in later raise "entered".
+      if (b.active) await seedZonePresence(c, rows[0].f.id, config.AIS_GAP_MINUTES);
       await audit(user.id, 'zone.create', 'zone', rows[0].f.id, { name: b.name, kind: b.kind, scope: b.scope }, c);
       return rows[0].f;
     });
@@ -190,6 +194,7 @@ export async function zoneRoutes(app: FastifyInstance) {
     const b = parse(patchBody, req.body);
     return withTransaction(async (c) => {
       await assertEditable(c, 'zones', id, req.user!, 'Zone');
+      const { rows: before } = await c.query<{ active: boolean }>(`SELECT active FROM zones WHERE id = $1`, [id]);
       const { rows } = await c.query(
         `WITH z AS (
            UPDATE zones SET
@@ -211,8 +216,12 @@ export async function zoneRoutes(app: FastifyInstance) {
           b.shape ?? null, b.shape_meta ?? null,
         ],
       );
-      // Geometry or activation changed: reset presence so it's recomputed from fresh positions without spurious alerts.
-      if (b.geometry || b.active === false) await c.query(`DELETE FROM zone_presence WHERE zone_id = $1`, [id]);
+      // Alerts switched on, or the zone redrawn while on: record the ships already inside without
+      // alerts (else each would "enter" on its next report). Switched off: forget who is inside.
+      const wasActive = before[0]?.active ?? false;
+      const isActive = b.active ?? wasActive;
+      if (isActive && (b.geometry || !wasActive)) await seedZonePresence(c, id, config.AIS_GAP_MINUTES);
+      else if (!isActive && (b.geometry || wasActive)) await c.query(`DELETE FROM zone_presence WHERE zone_id = $1`, [id]);
       await audit(req.user!.id, 'zone.update', 'zone', id, { fields: Object.keys(b) }, c);
       return rows[0].f;
     });

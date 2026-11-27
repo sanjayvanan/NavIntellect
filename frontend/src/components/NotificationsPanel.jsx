@@ -89,6 +89,7 @@ function NotificationsPanel({ style, theme, onClose }) {
                   {unread && <span className="notif-dot" aria-label="New" />}
                 </button>
                 <AiExplain
+                  iconOnly
                   className="notif-explain"
                   label="Why it matters"
                   guide="alerts.explain"
