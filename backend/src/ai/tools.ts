@@ -1,10 +1,13 @@
 import type { FunctionDeclaration } from '@google/genai';
+import { cleanText, textWarning, type ActionPolicy } from './untrusted.js';
 
 /**
  * Copilot tools. Data tools call the app's own REST endpoints as the signed-in user (same
  * validation and the same visibility rules: the model can only see what the user can see).
  * Map tools are carried out by the browser after the answer; here they are checked and recorded.
  * Results are kept small: free-tier tokens are scarce.
+ * Text from outside (AIS names/destinations, zone names) is cleaned and flagged when it reads like
+ * an instruction, and map actions pass the conversation's ActionPolicy (see untrusted.ts).
  */
 
 /** GET an API path as the user. Returns status and parsed JSON. */
@@ -32,6 +35,8 @@ export interface ToolContext {
   viewBbox: [number, number, number, number] | null;
   actions: MapAction[];
   ships: Map<number, ShipRef>;
+  /** Limits map actions to what the user asked for (the copilot sets it; one-shot features have no actions). */
+  policy?: ActionPolicy;
 }
 
 const bboxSchema = {
@@ -198,22 +203,33 @@ interface LegacyShip {
   destination?: string | null;
 }
 
+const shipName = (name: unknown, mmsi: number) => cleanText(name, 40) ?? `MMSI ${mmsi}`;
+
 function remember(ctx: ToolContext, s: { mmsi: number; name: string; lat: number | null; lon: number | null }) {
-  if (ctx.ships.size < 50) ctx.ships.set(s.mmsi, s);
+  if (ctx.ships.size < 50) ctx.ships.set(s.mmsi, { ...s, name: shipName(s.name, s.mmsi) });
+}
+
+/** Map actions go through the conversation's policy before anything is done. */
+function allow(ctx: ToolContext, action: { type: MapAction['type']; mmsi?: number }) {
+  const why = ctx.policy?.check(action, new Set(ctx.ships.keys()), ctx.actions.length);
+  if (why) throw new ToolError(why);
 }
 
 function compactShip(ctx: ToolContext, s: LegacyShip) {
   remember(ctx, { mmsi: s.mmsi, name: s.track_name, lat: s.latitude, lon: s.longitude });
+  const name = shipName(s.track_name, s.mmsi);
+  const destination = cleanText(s.destination, 40);
   return {
     mmsi: s.mmsi,
-    name: s.track_name,
-    type: s.type,
+    name,
+    type: cleanText(s.type, 40),
     speed_kn: round(s.speed_over_ground),
     course: round(s.course_over_ground, 0),
     lat: round(s.latitude, 3),
     lon: round(s.longitude, 3),
     heard: ago(s.sensor_timestamp),
-    ...(s.destination ? { destination: s.destination } : {}),
+    ...(destination ? { destination } : {}),
+    ...textWarning({ name, destination }),
   };
 }
 
@@ -290,7 +306,7 @@ const EXECUTORS: Record<string, Executor> = {
     const sort = str(a.sort);
     if (sort && ['recent', 'name', 'speed'].includes(sort)) q.set('sort', sort);
     const r = await getJson<{ total: number; zone: { name: string } | null; vessels: LegacyShip[] }>(ctx, `/api/vessels/browse?${q}`, 'Ships');
-    return { total: r.total, ...(r.zone ? { zone: r.zone.name } : {}), ships: r.vessels.map((s) => compactShip(ctx, s)) };
+    return { total: r.total, ...(r.zone ? { zone: cleanText(r.zone.name) } : {}), ships: r.vessels.map((s) => compactShip(ctx, s)) };
   },
 
   async list_zones(_a, ctx) {
@@ -298,7 +314,7 @@ const EXECUTORS: Record<string, Executor> = {
     return {
       zones: r.features.map((f) => ({
         id: f.id,
-        name: f.properties.name,
+        name: cleanText(f.properties.name),
         shape: f.properties.shape ?? 'polygon',
         kind: f.properties.kind,
         alerts_on: f.properties.active,
@@ -316,17 +332,19 @@ const EXECUTORS: Record<string, Executor> = {
       zones: { name: string; entered_at: string }[];
     }>(ctx, `/api/vessels/${mmsi}`, 'Ship');
     const s = r.static;
-    const name = (s.name as string) || `MMSI ${mmsi}`;
+    const name = shipName(s.name, mmsi);
+    const callsign = cleanText(s.callsign, 20);
+    const destination = cleanText(s.destination, 40);
     // AIS dimensions: dim_a + dim_b = length, dim_c + dim_d = beam (metres).
     const sum = (x: unknown, y: unknown) => (num(x) && num(y) ? num(x)! + num(y)! : null);
     remember(ctx, { mmsi, name, lat: r.latest?.latitude ?? null, lon: r.latest?.longitude ?? null });
     return {
       mmsi,
       name,
-      type: s.ship_type_label,
+      type: cleanText(s.ship_type_label, 40),
       imo: s.imo,
-      callsign: s.callsign,
-      destination: s.destination,
+      callsign,
+      destination,
       eta: s.eta,
       length_m: sum(s.dim_a, s.dim_b),
       beam_m: sum(s.dim_c, s.dim_d),
@@ -341,7 +359,8 @@ const EXECUTORS: Record<string, Executor> = {
             heard: ago(r.latest.sensor_timestamp),
           }
         : null,
-      in_zones: r.zones.map((z) => ({ name: z.name, since: z.entered_at })),
+      in_zones: r.zones.map((z) => ({ name: cleanText(z.name), since: z.entered_at })),
+      ...textWarning({ name, callsign, destination }),
     };
   },
 
@@ -371,18 +390,19 @@ const EXECUTORS: Record<string, Executor> = {
       total_in_period: rows.length >= 500 ? '500+' : rows.length,
       hours,
       alerts: rows.slice(0, limit).map((r) => {
-        const name = r.vessel_name || `MMSI ${r.mmsi}`;
+        const name = shipName(r.vessel_name, r.mmsi);
         remember(ctx, { mmsi: r.mmsi, name, lat: r.latitude, lon: r.longitude });
-        return { type: r.type, severity: r.severity, ship: name, mmsi: r.mmsi, zone: r.zone_name, at: r.created_at };
+        return { type: r.type, severity: r.severity, ship: name, mmsi: r.mmsi, zone: cleanText(r.zone_name), at: r.created_at, ...textWarning({ name }) };
       }),
     };
   },
 
   async show_ship(a, ctx) {
     const mmsi = mmsiArg(a.mmsi);
+    allow(ctx, { type: 'show_ship', mmsi });
     const r = await getJson<{ static: { name?: string }; latest: LegacyShip | null }>(ctx, `/api/vessels/${mmsi}`, 'Ship');
     if (!r.latest) throw new ToolError('This ship has no known position.');
-    const name = r.static.name || `MMSI ${mmsi}`;
+    const name = shipName(r.static.name, mmsi);
     remember(ctx, { mmsi, name, lat: r.latest.latitude, lon: r.latest.longitude });
     ctx.actions.push({ type: 'show_ship', mmsi, name, lat: r.latest.latitude, lon: r.latest.longitude });
     return { done: true, note: 'The map will open this ship.' };
@@ -392,9 +412,10 @@ const EXECUTORS: Record<string, Executor> = {
     const mmsi = mmsiArg(a.mmsi);
     const h = num(a.hours);
     const hours = h === 6 || h === 72 ? h : 24;
+    allow(ctx, { type: 'show_track', mmsi });
     const r = await getJson<{ static: { name?: string }; latest: LegacyShip | null }>(ctx, `/api/vessels/${mmsi}`, 'Ship');
     if (!r.latest) throw new ToolError('This ship has no known position.');
-    const name = r.static.name || `MMSI ${mmsi}`;
+    const name = shipName(r.static.name, mmsi);
     ctx.actions.push({ type: 'show_track', mmsi, hours, name, lat: r.latest.latitude, lon: r.latest.longitude });
     return { done: true, note: `The map will draw the last ${hours} h of the track.` };
   },
@@ -402,8 +423,9 @@ const EXECUTORS: Record<string, Executor> = {
   async show_zone(a, ctx) {
     const id = zoneIdArg(a.zone_id);
     if (!id) throw new ToolError('zone_id is required.');
+    allow(ctx, { type: 'show_zone' });
     const f = await getJson<{ properties: { name: string } }>(ctx, `/api/zones/${id}`, 'Zone');
-    ctx.actions.push({ type: 'show_zone', zone_id: id, name: f.properties.name });
+    ctx.actions.push({ type: 'show_zone', zone_id: id, name: cleanText(f.properties.name) ?? 'Zone' });
     return { done: true };
   },
 
@@ -412,6 +434,7 @@ const EXECUTORS: Record<string, Executor> = {
     const lon = num(a.lon);
     if (lat === undefined || lon === undefined || Math.abs(lat) > 85 || Math.abs(lon) > 180) throw new ToolError('lat/lon out of range.');
     const zoom = Math.min(14, Math.max(3, Math.round(num(a.zoom) ?? 8)));
+    allow(ctx, { type: 'fly_to' });
     ctx.actions.push({ type: 'fly_to', lat, lon, zoom });
     return { done: true };
   },
@@ -420,6 +443,7 @@ const EXECUTORS: Record<string, Executor> = {
     const query = str(a.query)?.slice(0, 64);
     const zone_id = zoneIdArg(a.zone_id);
     const sort = str(a.sort);
+    allow(ctx, { type: 'filter_ships' });
     ctx.actions.push({ type: 'filter_ships', ...(query ? { query } : {}), ...(zone_id ? { zone_id } : {}), ...(sort ? { sort } : {}) });
     return { done: true };
   },

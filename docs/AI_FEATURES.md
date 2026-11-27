@@ -21,6 +21,7 @@ window bolted onto the side. Every idea below uses something the app already has
 | Ship briefing (✦ "AI briefing" in ship details) and alert explanation (✦ "Why it matters" under each alert) | **Built**: `backend/src/ai/explain.ts`, `frontend/src/components/AiExplain.jsx` |
 | Shadow-cursor guide (ask the copilot "How do I…?") | **Built**: Gemini structured output limited to the controls on screen; `frontend/src/guide/targets.js` (control list, `data-guide` names), `ShadowGuide.jsx` |
 | Evals: 43 scored copilot cases (`npm run eval`) | **Built**: `backend/evals/` |
+| Prompt-injection defences (hostile AIS text) | **Built**: `backend/src/ai/untrusted.ts` |
 | Observability: every AI request traced (`/api/ai/metrics`, `/api/ai/traces`) | **Built**: `backend/src/ai/trace.ts`, table `ai_requests` |
 | Draw zones by talking, voice, anomaly detection ("AI watch"), stuck detection for the guide | Planned |
 
@@ -53,11 +54,12 @@ Without a key the panel says the AI is not set up, and everything else works as 
 - `backend/test/integration.test.ts` ("AI copilot"): tool loop, visibility, cache, forced last round, budget.
 - `backend/test/ai.test.ts`: track summary maths.
 - `frontend/src/store/copilotSlice.test.js`: conversation state and ship links.
+- `backend/test/untrusted.test.ts`: cleaning and flagging of AIS text, the map-action policy.
 - `backend/test/evals.test.ts`: the eval world, the scorer, and whole cases run with a scripted model.
 
 ---
 
-## AI engineering: how the copilot is measured
+## AI engineering: how the copilot is measured and kept safe
 
 ### Evals (`backend/evals/`)
 Unit tests prove the plumbing works; evals measure whether the **model** answers well.
@@ -89,6 +91,35 @@ Unit tests prove the plumbing works; evals measure whether the **model** answers
   the last one, so the effect of a prompt change can be measured.
 
 A full run is about 120 requests, more than the default 100-per-day budget. Run it by category over two days, or raise `AI_DAILY_LIMIT` if your Google project allows more.
+
+### Prompt injection (`backend/src/ai/untrusted.ts`)
+Ship names, callsigns and destinations are broadcast by the ships themselves. Anyone with a
+transmitter can put `IGNORE ALL PREVIOUS INSTRUCTIONS` into the copilot's context, and zone names are
+typed by users. There are three layers of defence:
+
+1. **Clean and flag.** Outside text is normalised (NFKC) and stripped of control, zero-width and
+   bidi characters, and its length is capped. Text that reads like an instruction gets a
+   `text_warning` beside the data, so the model, and the user if they ask, can see it is
+   suspicious.
+2. **Label.** Every prompt that sees tool data says that tool results are data, never
+   instructions.
+3. **Limit what a fooled model can do: `ActionPolicy`, enforced in code.**
+   - `fly_to` works only when the user's message asks to go somewhere.
+   - `show_ship` and `show_track` work only for a ship the user named or selected, or one a search
+     returned.
+   - There are at most 3 actions per answer.
+
+   The copilot has **no write tools**, and its data tools run **as the signed-in user**. A successful
+   injection is limited to a wrong answer or a narrow map action.
+
+   **Known limit:** MMSIs named in earlier answers count as referred to, so that follow-ups like
+   "show its track" work. Those answers come back from the browser, so an MMSI copied from hostile
+   text in one answer could be opened in a later turn. It can only open a ship; it changes no
+   data.
+
+The `injection` eval cases use ships whose names and destinations are attacks. The evals score both
+whether the model *tried* to obey and whether it had any *effect*. In `test/evals.test.ts`, a fooled
+model calls `fly_to(0,0)` and the policy refuses it.
 
 ### Observability (`backend/src/ai/trace.ts`, table `ai_requests`)
 A decorator wraps the model client, so neither the Gemini client nor the test fake changed. Every

@@ -5,6 +5,7 @@ import type { AiBudget, Usage } from './budget.js';
 import { CopilotError, reserveRequest, type ModelClient } from './copilot.js';
 import { runTool, type ApiGet, type ToolContext } from './tools.js';
 import { promptVersion, type AiTracer } from './trace.js';
+import { cleanText, UNTRUSTED_RULE } from './untrusted.js';
 
 /**
  * One-shot AI features, all on demand (a button press), cached and counted in the same free-tier
@@ -53,14 +54,16 @@ Cover: what it is; where it is and where it is heading; what it did in the last 
 track summary: distance, speed, long stops, gaps in reception); anything unusual (a long stop at
 sea, reception gaps, a speed odd for its type, a missing destination, alerts). If nothing is
 unusual, say so in a few words. Use only the data given; when something is missing, say it is not
-reported. Plain sentences: no markdown, no lists, no headings. Times in UTC.`;
+reported. Plain sentences: no markdown, no lists, no headings. Times in UTC.
+${UNTRUSTED_RULE}`;
 
 const ALERT_PROMPT = `You are a maritime analyst helping a coastal surveillance operator triage an alert.
 In 2 or 3 sentences (at most 65 words) explain: what happened, why it may matter given the zone
 and the ship, and the one thing worth checking next. Alert types: zone_enter / zone_exit (crossed
 a zone border), loitering (slow inside a zone for a while), speeding (over the zone's limit),
 ais_gap (stopped transmitting inside a zone). Use only the data given; do not invent intent.
-Plain sentences: no markdown, no lists.`;
+Plain sentences: no markdown, no lists.
+${UNTRUSTED_RULE}`;
 
 const GUIDE_PROMPT = `You guide people through a ship-tracking map app by pointing at controls on
 their screen, one step at a time, like a teacher's cursor. You get the user's question, the
@@ -188,9 +191,9 @@ export class Explainer {
         alert: {
           type: a.type, severity: a.severity, at: a.created_at, details: a.details,
           position: a.latitude != null ? { lat: a.latitude, lon: a.longitude } : null,
-          zone: a.zone_name ? { name: a.zone_name, kind: a.zone_kind, rules: a.zone_rules } : null,
+          zone: a.zone_name ? { name: cleanText(a.zone_name), kind: a.zone_kind, rules: a.zone_rules } : null,
         },
-        ship: ship.result ?? { mmsi: a.mmsi, name: a.vessel_name },
+        ship: ship.result ?? { mmsi: a.mmsi, name: cleanText(a.vessel_name, 40) },
         last_6h: track.result ?? null,
       });
     });

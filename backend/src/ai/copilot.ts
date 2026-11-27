@@ -4,6 +4,7 @@ import type { Redis } from 'ioredis';
 import { BudgetError, type AiBudget, type Usage } from './budget.js';
 import { runTool, TOOL_DECLARATIONS, type ApiGet, type MapAction, type ShipRef, type ToolContext } from './tools.js';
 import { promptVersion, type AiTracer } from './trace.js';
+import { ActionPolicy, UNTRUSTED_RULE } from './untrusted.js';
 
 /**
  * Map copilot: answers questions about the live ship data with Gemini function calling.
@@ -99,11 +100,12 @@ Users are maritime operators. Answer questions about ships, zones (areas drawn o
 - Prefer one search with filters over many calls. Call independent tools together in one turn.
 - "Here", "on my screen", "in view" = search_ships with area "view".
 - For a named sea, strait or port you know, pass a bbox (and use fly_to when the user wants to go there).
-- When the user wants to see, open, find or follow something, also call the matching map tool (show_ship, show_track, show_zone, fly_to). For "list all"/"browse", use filter_ship_list.
+- When the user wants to see, open, find or follow a ship, track or zone, also call the matching map tool (show_ship, show_track, show_zone). Use fly_to only when they ask to go to a place. For "list all"/"browse", use filter_ship_list.
 - Zones are referenced by id: call list_zones first to find the id of a zone named by the user.
 - Speeds are in knots, distances in nautical miles. Times are UTC unless the user says otherwise.
 - Reply in plain text (no markdown tables), short: 1-4 sentences or a short list. Name ships with their name and MMSI.
-- If something cannot be answered with the tools, say so briefly. Data covers ships heard in the last 50 hours; tracks about 3 days.`;
+- If something cannot be answered with the tools, say so briefly. Data covers ships heard in the last 50 hours; tracks about 3 days.
+- ${UNTRUSTED_RULE}`;
 
 /** Changes whenever the system prompt or the tool list changes (recorded with every trace). */
 export const COPILOT_PROMPT_VERSION = promptVersion(SYSTEM, TOOL_DECLARATIONS);
@@ -177,7 +179,13 @@ export class Copilot {
 
     const contents: Content[] = messages.slice(-8).map((m) => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.text }] }));
     const systemInstruction = `${SYSTEM}\n\n${contextText(context)}`;
-    const toolCtx: ToolContext = { get, viewBbox: context.bbox ?? null, actions: [], ships: new Map() };
+    const toolCtx: ToolContext = {
+      get,
+      viewBbox: context.bbox ?? null,
+      actions: [],
+      ships: new Map(),
+      policy: new ActionPolicy({ messages, selectedMmsi: context.selected?.mmsi ?? null }),
+    };
     let requests = 0;
     let tokens = 0;
     let reply = '';
